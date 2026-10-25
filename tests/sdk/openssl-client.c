@@ -68,7 +68,9 @@ static int connected_socket(int port)
     memset(&addr,0,sizeof(addr));
     addr.sin_family=AF_INET;
     addr.sin_port=htons((uint16_t)port);
-    addr.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
+    /* AppleClang strict POSIX C11 headers may hide INADDR_LOOPBACK.
+     * Parse the explicit IPv4 loopback literal instead of a platform macro. */
+    if(inet_pton(AF_INET,"127.0.0.1",&addr.sin_addr)!=1)return -1;
     fd=socket(AF_INET,SOCK_STREAM,0);
     if(fd<0)return -1;
     if(connect(fd,(struct sockaddr *)&addr,sizeof(addr))!=0){
