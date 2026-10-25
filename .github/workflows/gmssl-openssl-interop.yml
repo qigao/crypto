@@ -1,0 +1,102 @@
+name: GmSSL independent OpenSSL TLS/X509 interoperability
+
+# This is the *independent-peer* gate. GmSSL source stays pinned;
+# the external peer and certificate oracle are real OpenSSL 3 processes.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/gmssl-openssl-interop.yml"
+      - "tools/assemble_gmssl.cmake"
+      - "providers/gmssl/patches/**"
+      - "providers/gmssl/tests/tls12-rsa-mtls-interop.sh"
+      - "providers/gmssl/tests/tls-p384-issuer-interop.sh"
+      - "providers/gmssl/provenance/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-peer:
+    name: ${{ matrix.os }} GmSSL vs independent OpenSSL 3
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Enforce independently installed OpenSSL 3 oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            if ! brew --prefix openssl@3 >/dev/null 2>&1; then
+              brew install openssl@3
+            fi
+            brew_bin="$(brew --prefix openssl@3)/bin"
+            test -x "$brew_bin/openssl"
+            echo "$brew_bin" >> "$GITHUB_PATH"
+            export PATH="$brew_bin:$PATH"
+          fi
+          openssl version
+          openssl version | grep -Eq '^OpenSSL 3[.]'
+          test "$(git -C _gmssl-upstream rev-parse HEAD)" = \
+            7c9f02904ef33e59c87b4f16621cc8fd434e7579
+      - name: Assemble and build exact private GmSSL 3.2 CLI source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/gmssl-interop-receipt.json" \
+            -P tools/assemble_gmssl.cmake
+          cmake -S _gmssl-upstream -B build-gmssl -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
+            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
+            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl --target gmssl-bin --parallel 2
+          test -s "$RUNNER_TEMP/gmssl-interop-receipt.json"
+          test -s build-gmssl/bin/libgmssl.a
+          test -x build-gmssl/bin/gmssl
+      - name: Real independent OpenSSL TLS 1.2 RSA mutual-authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Two distinct peers: original GmSSL server vs OpenSSL client,
+          # then original GmSSL client vs OpenSSL server and mutual X.509.
+          bash providers/gmssl/tests/tls12-rsa-mtls-interop.sh \
+            "$GITHUB_WORKSPACE/build-gmssl/bin/gmssl" \
+            "$RUNNER_TEMP/gmssl-rsa-mtls-interop" 19530
+      - name: Real independent OpenSSL TLS 1.2/1.3 P-384 CA SHA-384
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Real OpenSSL-generated P-384 CA -> P-256 leaf ECDSA/SHA384.
+          # Original test verifies CA, SAN and TLS version/cipher negatives.
+          bash providers/gmssl/tests/tls-p384-issuer-interop.sh \
+            "$GITHUB_WORKSPACE/build-gmssl/bin/gmssl" \
+            "$RUNNER_TEMP/gmssl-p384-interop" 19540
+      - name: Upload exact source receipt and nonsecret interop logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmssl-independent-openssl-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/gmssl-interop-receipt.json
+            ${{ runner.temp }}/gmssl-rsa-mtls-interop/*.err
+            ${{ runner.temp }}/gmssl-rsa-mtls-interop/*.out
+            ${{ runner.temp }}/gmssl-p384-interop/*.err
+            ${{ runner.temp }}/gmssl-p384-interop/*.out
+          if-no-files-found: warn
