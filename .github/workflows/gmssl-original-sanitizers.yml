@@ -1,0 +1,105 @@
+name: GmSSL original 29 C11 contract Sanitizers
+
+# Separate from independent OpenSSL peer interop: source-level lifetime
+# and concurrency instrumentation using the real pinned GmSSL implementation.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/gmssl-original-sanitizers.yml"
+      - "cmake/qualification/**"
+      - "tools/assemble_gmssl.cmake"
+      - "providers/gmssl/patches/**"
+      - "providers/gmssl/tests/**"
+      - "providers/gmssl/provenance/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-instrumented-source:
+    name: Linux original 29 C11 ${{ matrix.kind }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: asan-ubsan
+            flags: "-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"
+          - kind: tsan
+            flags: "-fsanitize=thread -fno-omit-frame-pointer -g -O1"
+    steps:
+      - name: Checkout exact Crypto GmSSL migration sources
+        uses: actions/checkout@v4
+      - name: Checkout pinned unmodified upstream GmSSL 3.2
+        uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Replay 40 source transformations and compile real instrumented GmSSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          test "$(git -C _gmssl-upstream rev-parse HEAD)" = \
+            7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          receipt="$RUNNER_TEMP/gmssl-${{ matrix.kind }}-receipt.json"
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$receipt" \
+            -P tools/assemble_gmssl.cmake
+          test -s "$receipt"
+          cmake -S _gmssl-upstream -B build-gmssl-${{ matrix.kind }} -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
+            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
+            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF \
+            "-DCMAKE_C_FLAGS=${{ matrix.flags }}"
+          cmake --build build-gmssl-${{ matrix.kind }} \
+            --target gmssl --parallel 2
+          test -s build-gmssl-${{ matrix.kind }}/bin/libgmssl.a
+      - name: Compile same original 29 contract sources with sanitizer instrumentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          library="$GITHUB_WORKSPACE/build-gmssl-${{ matrix.kind }}/bin/libgmssl.a"
+          cmake -S cmake/qualification -B build-qualify-${{ matrix.kind }} -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            "-DGMSSL_ASSEMBLED_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLED_LIBRARY=$library" \
+            "-DCMAKE_C_FLAGS=${{ matrix.flags }}"
+          cmake --build build-qualify-${{ matrix.kind }} --parallel 2
+          # Fail closed: no source test may be silently excluded from the
+          # instrumented matrix or replaced with a non-instrumented mock.
+          count="$(ctest --test-dir build-qualify-${{ matrix.kind }} -N \
+            | sed -n 's/^Total Tests: //p')"
+          test "$count" = 29
+      - name: Repeat all real TLS/External IO X509 RSA and crypto contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ matrix.kind }}' == 'asan-ubsan' ]]; then
+            export ASAN_OPTIONS='detect_leaks=1:halt_on_error=1:abort_on_error=1'
+            export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+          else
+            export TSAN_OPTIONS='halt_on_error=1:exitcode=66'
+          fi
+          ctest --test-dir build-qualify-${{ matrix.kind }} \
+            --output-on-failure --no-tests=error --timeout 120 \
+            --repeat until-fail:3
+      - name: Upload exact sanitizer source/build/test receipts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gmssl-original-29-${{ matrix.kind }}
+          path: |
+            ${{ runner.temp }}/gmssl-${{ matrix.kind }}-receipt.json
+            build-gmssl-${{ matrix.kind }}/CMakeCache.txt
+            build-qualify-${{ matrix.kind }}/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
