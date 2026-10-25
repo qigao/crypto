@@ -8,6 +8,7 @@ on:
       - "include/crypto/**"
       - "src/**"
       - "tests/sdk/**"
+      - "tests/owner/**"
       - "tools/qualify_crypto_shared_openssl.sh"
       - "tools/assemble_gmssl.cmake"
       - "providers/gmssl/hardening/**"
@@ -110,6 +111,22 @@ jobs:
           bash tools/qualify_crypto_shared_openssl.sh \
             "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_client" \
             "$RUNNER_TEMP/crypto-shared-asan-peer" 9780
+      - name: ASan UBSan LSan exact SM3 KAT, shared TLS view and two imported MODULEs
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
+          cmake -S tests/owner -B build-owner-asan -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            "-DCMAKE_C_FLAGS=$flags" \
+            "-DCMAKE_CXX_FLAGS=$flags" \
+            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined" \
+            "-DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address,undefined" \
+            "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/_installed-asan"
+          cmake --build build-owner-asan --parallel 2
+          test "$(ctest --test-dir build-owner-asan -N | sed -n 's/^Total Tests: //p')" = 3
+          ctest --test-dir build-owner-asan --no-tests=error \
+            --output-on-failure --timeout 120 --repeat until-fail:3
       - name: Preserve sanitizer source, shared library and peer evidence (no private keys)
         if: always()
         uses: actions/upload-artifact@v4
@@ -123,4 +140,5 @@ jobs:
             build-gmssl-asan/CMakeCache.txt
             build-provider-asan/CMakeCache.txt
             build-sdk-asan/Testing/Temporary/LastTest.log
+            build-owner-asan/Testing/Temporary/LastTest.log
           if-no-files-found: warn
