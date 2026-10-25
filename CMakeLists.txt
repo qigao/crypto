@@ -39,6 +39,12 @@ target_compile_definitions(CryptoTLSProvider PRIVATE
   ENABLE_SHA1 ENABLE_SHA2 ENABLE_AES)
 target_link_libraries(CryptoTLSProvider PRIVATE PrivateGmSSL)
 
+if(MSVC)
+  # MSVC C11 stdatomic.h remains an explicit opt-in on VS 2026. Use
+  # standard lock-free C atomics, not a C++ runtime or unsafe emulation.
+  target_compile_options(CryptoTLSProvider PRIVATE /experimental:c11atomics)
+endif()
+
 if(WIN32)
   # Only explicitly marked CRYPTO_TLS_API functions may be exported. The
   # imported GmSSL static archive must not become a second public ABI.
