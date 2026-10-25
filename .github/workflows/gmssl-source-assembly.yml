@@ -1,0 +1,82 @@
+name: GmSSL 3.2 standalone source assembly (qualification only)
+
+on:
+  pull_request:
+    paths:
+      - "tools/assemble_gmssl.cmake"
+      - "cmake/qualification/**"
+      - ".github/workflows/gmssl-source-assembly.yml"
+      - "providers/gmssl/patches/**"
+      - "providers/gmssl/tests/**"
+      - "providers/gmssl/provenance/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  assemble-linux:
+    name: Replay frozen patch order and compile real GmSSL C11 source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Crypto exact candidate sources
+        uses: actions/checkout@v4
+      - name: Original upstream GmSSL exact git revision
+        uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Qualify original 92-source and 40-patch manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          test "$(git -C _gmssl-upstream rev-parse HEAD)" = \
+            7c9f02904ef33e59c87b4f16621cc8fd434e7579
+      - name: Replay source transformations without a vcpkg port
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/gmssl-assembly-receipt.json" \
+            -P tools/assemble_gmssl.cmake
+          test -s "$RUNNER_TEMP/gmssl-assembly-receipt.json"
+          git -C _gmssl-upstream diff --stat
+      - name: Compile the patched real private GmSSL 3.2 C11 static implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S _gmssl-upstream -B build-gmssl -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
+            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
+            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl --target gmssl --parallel 2
+          test -s build-gmssl/libgmssl.a
+      - name: Compile and run five unchanged original provider contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S cmake/qualification -B build-qualify -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DGMSSL_ASSEMBLED_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLED_LIBRARY=$GITHUB_WORKSPACE/build-gmssl/libgmssl.a"
+          cmake --build build-qualify --parallel 2
+          ctest --test-dir build-qualify --output-on-failure \
+            --no-tests=error --timeout 60
+      - name: Upload assembled source receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmssl-assembled-source-linux-evidence
+          path: |
+            ${{ runner.temp }}/gmssl-assembly-receipt.json
+            build-gmssl/CMakeCache.txt
+            build-qualify/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
