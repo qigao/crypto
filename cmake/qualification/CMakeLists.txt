@@ -52,3 +52,56 @@ foreach(_fixture IN ITEMS p384-ca p384-leaf p256-ca p256-leaf)
   target_compile_definitions(crypto_original_x509_p384_sha384 PRIVATE
     "GMSSL_${_label}=\"${_path}\"")
 endforeach()
+
+# Original, unchanged C11 GmSSL 3.2 contract sources: test-only binary
+# imports the exact privately assembled libgmssl.a, never an exported API.
+foreach(_entry IN ITEMS
+    des_cbc:des-cbc-contract.c
+    sha1:sha1-contract.c
+    tls12_alpn:tls12-alpn-contract.c
+    tls_version_range:tls-version-range-contract.c
+    tls_version_range_dispatch:tls-version-range-dispatch-contract.c
+    tls_version_range_server_dispatch:tls-version-range-server-dispatch-contract.c
+    rsa_signature:rsa-signature-contract.c
+    x509_rsa:x509-rsa-contract.c
+    rsa_private:rsa-private-contract.c
+    tls13_rsa_pss:tls13-rsa-pss-contract.c
+    rsa_private_op:rsa-private-op-contract.c
+    rsa_pkcs8:rsa-pkcs8-contract.c
+    rsa_encrypted_pkcs8:rsa-encrypted-pkcs8-contract.c
+    rsa_private_signatures:rsa-private-signatures-contract.c
+    tls_exporter:tls-exporter-contract.c
+    tls_inspection:tls-inspection-contract.c
+    tls12_ecdhe_rsa:tls12-ecdhe-rsa-contract.c
+    x509_basic_constraints:x509-basic-constraints-contract.c
+    x509_ca_eku:x509-ca-eku-contract.c
+    tls_certificate_capacity:tls-certificate-capacity-contract.c
+    p256_plain_pkcs8:p256-plain-pkcs8-contract.c
+    strict_protocol:strict-protocol-contract.c)
+  string(REPLACE ":" ";" _fields "${_entry}")
+  list(GET _fields 0 _name)
+  list(GET _fields 1 _source)
+  crypto_gmssl_original_case("${_name}" "${_source}")
+endforeach()
+
+# True original TLS 1.2 and TLS 1.3 external-I/O contracts. This executes
+# real borrowed callbacks and TLS handshake state, not a mocked transcript.
+function(crypto_original_external_io case_name protocol cipher sigalg label)
+  crypto_gmssl_original_case("${case_name}" "tls-external-io-contract.c")
+  set(_target "crypto_original_${case_name}")
+  target_compile_definitions("${_target}" PRIVATE
+    "GMSSL_EXTERNAL_IO_CA_CERT=\"${_gmssl_tests}/fixtures/external-io-ca-cert.pem\""
+    "GMSSL_EXTERNAL_IO_SERVER_CERT=\"${_gmssl_tests}/fixtures/external-io-server-cert.pem\""
+    "GMSSL_EXTERNAL_IO_SERVER_KEY=\"${_gmssl_tests}/fixtures/external-io-server-key.pem\""
+    "GMSSL_EXTERNAL_IO_PROTOCOL=${protocol}"
+    "GMSSL_EXTERNAL_IO_CIPHER=${cipher}"
+    "GMSSL_EXTERNAL_IO_SIGALG=${sigalg}"
+    "GMSSL_EXTERNAL_IO_LABEL=\"${label}\"")
+  set_tests_properties("gmssl.original.${case_name}" PROPERTIES TIMEOUT 120)
+endfunction()
+crypto_original_external_io(tls13_external_io
+  TLS_protocol_tls13 TLS_cipher_aes_128_gcm_sha256
+  TLS_sig_rsa_pss_rsae_sha256 "TLS 1.3")
+crypto_original_external_io(tls12_external_io
+  TLS_protocol_tls12 TLS_cipher_ecdhe_rsa_with_aes_128_gcm_sha256
+  TLS_sig_rsa_pkcs1_sha256 "TLS 1.2")

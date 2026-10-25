@@ -72,7 +72,7 @@ jobs:
           else
             test -s build-gmssl/bin/libgmssl.a
           fi
-      - name: Compile and run five unchanged original provider contracts
+      - name: Compile and run 29 unchanged original GmSSL TLS and X509 contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -88,8 +88,11 @@ jobs:
             "-DGMSSL_ASSEMBLED_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
             "-DGMSSL_ASSEMBLED_LIBRARY=$library"
           cmake --build build-qualify --config Release --parallel 2
+          # 5 original accepted + 22 additional original crypto/TLS contracts
+          # + two full TLS 1.2/1.3 in-memory handshake/external-I/O tests.
+          test "$(ctest --test-dir build-qualify -C Release -N | sed -n 's/^Total Tests: //p')" = 29
           ctest --test-dir build-qualify -C Release --output-on-failure \
-            --no-tests=error --timeout 60
+            --no-tests=error --timeout 120
       - name: Upload assembled source receipt
         if: always()
         uses: actions/upload-artifact@v4
