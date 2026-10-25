@@ -144,7 +144,7 @@ if(DEFINED GMSSL_ASSEMBLY_RECEIPT)
     "  \"original_port_version\": \"3.2.0#13\",\n"
     "  \"git_patch_count\": 1,\n"
     "  \"source_adaptations\": ${_n},\n"
-    "  \"crypto_hardening_edits\": 4,\n"
+    "  \"crypto_hardening_edits\": 5,\n"
     "  \"secp256r1_sha256\": \"${_p256_sha}\",\n"
     "  \"secp384r1_sha256\": \"${_p384_sha}\",\n"
     "  \"tls12_sha256\": \"${_tls12_sha}\",\n"
@@ -154,4 +154,4 @@ if(DEFINED GMSSL_ASSEMBLY_RECEIPT)
     "  \"tls_source_sha256\": \"${_tls_source_sha}\"\n"
     "}\n")
 endif()
-message(STATUS "GmSSL source assembled: one git patch + ${_n} original adaptations + 4 Crypto UB hardening edits")
+message(STATUS "GmSSL source assembled: one git patch + ${_n} original adaptations + 5 Crypto UB hardening edits")
