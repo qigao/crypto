@@ -67,19 +67,48 @@ crypto_replace_exactly_once("${_gmssl}/src/tls12.c"
 	conn->session_id_len = session_id_len;
 ]==])
 
+# The TLS 1.3 ServerHello may also echo an empty legacy session ID.
+# The decoder then legitimately exposes (NULL,0). Avoid memcmp(NULL,
+# session_id,0) and reject nonzero spans with invalid pointers/lengths.
+crypto_replace_exactly_once("${_gmssl}/src/tls13.c"
+[==[
+	// legacy_session_id_echo
+	if (legacy_session_id_echo_len != conn->session_id_len
+		|| memcmp(legacy_session_id_echo, conn->session_id, conn->session_id_len) != 0) {
+		error_print();
+		tls13_send_alert(conn, TLS_alert_illegal_parameter);
+		return -1;
+	}
+]==]
+[==[
+	// legacy_session_id_echo
+	if (legacy_session_id_echo_len > sizeof(conn->session_id)
+		|| legacy_session_id_echo_len != conn->session_id_len
+		|| (legacy_session_id_echo_len
+			&& (!legacy_session_id_echo
+				|| memcmp(legacy_session_id_echo,
+					conn->session_id, legacy_session_id_echo_len) != 0))) {
+		error_print();
+		tls13_send_alert(conn, TLS_alert_illegal_parameter);
+		return -1;
+	}
+]==])
+
 if(DEFINED GMSSL_UB_PATCH_REPORT)
   get_filename_component(_report_dir "${GMSSL_UB_PATCH_REPORT}" DIRECTORY)
   file(MAKE_DIRECTORY "${_report_dir}")
   file(SHA256 "${_gmssl}/src/secp256r1.c" _p256)
   file(SHA256 "${_gmssl}/src/secp384r1.c" _p384)
   file(SHA256 "${_gmssl}/src/tls12.c" _tls12)
+  file(SHA256 "${_gmssl}/src/tls13.c" _tls13)
   file(WRITE "${GMSSL_UB_PATCH_REPORT}"
     "{\n"
     "  \"classification\": \"CRYPTO_CANDIDATE_3_SOURCE_UB_FIXES_NOT_VCPKG_RELEASE\",\n"
-    "  \"source_ub_fixes\": 3,\n"
+    "  \"source_ub_fixes\": 4,\n"
     "  \"secp256r1_sha256\": \"${_p256}\",\n"
     "  \"secp384r1_sha256\": \"${_p384}\",\n"
-    "  \"tls12_sha256\": \"${_tls12}\"\n"
+    "  \"tls12_sha256\": \"${_tls12}\",\n"
+    "  \"tls13_sha256\": \"${_tls13}\"\n"
     "}\n")
 endif()
-message(STATUS "Crypto GmSSL candidate: fixed signed carry shift in P-256/P-384 and NULL memcpy in TLS 1.2")
+message(STATUS "Crypto GmSSL candidate: four strict source UB fixes (P-256/P-384 carry, TLS 1.2 zero Session ID memcpy, TLS 1.3 zero legacy Session ID memcmp)")

@@ -53,3 +53,21 @@ ASan/UBSan/LeakSanitizer and TSan with fail-on-diagnostic, no suppressions.
 This is native source hardening of a candidate, not a Crypto Provider
 release, and the safety changes still need the separate real OpenSSL
 peer regression after incorporation into the eventual reviewed provider.
+
+
+### Additional TLS 1.3 empty legacy Session ID
+
+The next fail-closed ASan/UBSan run exposed a fourth genuine source
+defect in \`tls13_recv_server_hello()\`: the upstream code called
+\`memcmp(NULL, session_id, 0)\` when the peer echoed an empty TLS 1.3
+legacy Session ID. The Crypto-only source adaptation now validates the
+echo size and pointer for nonempty values and performs the byte
+comparison *only* when its admitted length is nonzero. The TLS 1.3
+handshake test must still complete, including the original callback
+and failure paths.
+
+The source receipt now records **four** exact single-anchor repairs,
+including the SHA-256 of the patched \`src/tls13.c\`. All 29 original
+source tests remain enabled × 3 repetitions under ASan/UBSan/LSan and
+TSan; none is XFAILed or disabled. Original upstream/port input bytes
+and the \`vcpkg-cache 3.2.0#13\` package remain unchanged.
