@@ -67,9 +67,14 @@ function(vcpkg_replace_string file_path find_text replace_text)
     # Check *both* exact legacy anchors and the already-applied secure
     # bounded-list semantics before classifying either as redundant.
     set(_alpn_redundant FALSE)
+    # CMake bracket literals retain their terminal newline, so compare
+    # exact purpose fragments rather than relying on STREQUAL of a block.
+    string(FIND "${find_text}" "ctx->alpn_protocols_cnt > sizeof(ctx->alpn_protocols)" _old_bound)
+    string(FIND "${find_text}" "protocol_len = strlen(ctx->alpn_protocols[i])" _old_loop)
+    string(FIND "${replace_text}" "alpn_wire_len" _new_bound)
     if(file_path MATCHES "/src/tls[.]c$"
-       AND ("${replace_text}" STREQUAL "size_t alpn_wire_len = 0;"
-            OR "${replace_text}" MATCHES "alpn_wire_len > 65535"))
+       AND NOT _new_bound EQUAL -1
+       AND (NOT _old_bound EQUAL -1 OR NOT _old_loop EQUAL -1))
       string(FIND "${_old}" "ctx->alpn_protocols = protocols;" _has_borrowed)
       string(FIND "${_old}" "TLS_ALPN_PROTOCOL_NAME_LIST_MAX_SIZE = 65535" _has_bound)
       string(FIND "${_old}" "wire_len > TLS_ALPN_PROTOCOL_NAME_LIST_MAX_SIZE - 1 - protocol_len" _has_guard)
