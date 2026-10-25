@@ -15,10 +15,14 @@ permissions:
   contents: read
 
 jobs:
-  assemble-linux:
-    name: Replay frozen patch order and compile real GmSSL C11 source
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
+  assemble-three-platform:
+    name: ${{ matrix.os }} patched GmSSL C11 and real provider contracts
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
     steps:
       - name: Crypto exact candidate sources
         uses: actions/checkout@v4
@@ -49,7 +53,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S _gmssl-upstream -B build-gmssl -G Ninja \
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+          else
+            generator=(-G Ninja)
+          fi
+          cmake -S _gmssl-upstream -B build-gmssl "${generator[@]}" \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
             -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
             -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
@@ -57,24 +66,35 @@ jobs:
             -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
             -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
             -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
-          cmake --build build-gmssl --target gmssl --parallel 2
-          test -s build-gmssl/bin/libgmssl.a
+          cmake --build build-gmssl --config Release --target gmssl --parallel 2
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            test -s build-gmssl/bin/Release/gmssl.lib
+          else
+            test -s build-gmssl/bin/libgmssl.a
+          fi
       - name: Compile and run five unchanged original provider contracts
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S cmake/qualification -B build-qualify -G Ninja \
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+            library="$GITHUB_WORKSPACE/build-gmssl/bin/Release/gmssl.lib"
+          else
+            generator=(-G Ninja)
+            library="$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
+          fi
+          cmake -S cmake/qualification -B build-qualify "${generator[@]}" \
             -DCMAKE_BUILD_TYPE=Release \
             "-DGMSSL_ASSEMBLED_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
-            "-DGMSSL_ASSEMBLED_LIBRARY=$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
-          cmake --build build-qualify --parallel 2
-          ctest --test-dir build-qualify --output-on-failure \
+            "-DGMSSL_ASSEMBLED_LIBRARY=$library"
+          cmake --build build-qualify --config Release --parallel 2
+          ctest --test-dir build-qualify -C Release --output-on-failure \
             --no-tests=error --timeout 60
       - name: Upload assembled source receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gmssl-assembled-source-linux-evidence
+          name: gmssl-assembled-source-${{ matrix.os }}-evidence
           path: |
             ${{ runner.temp }}/gmssl-assembly-receipt.json
             build-gmssl/CMakeCache.txt

@@ -27,7 +27,11 @@ function(crypto_gmssl_original_case case_name file_name)
     C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
   target_link_libraries("crypto_original_${case_name}" PRIVATE
     GmSSLPrivateQualification Threads::Threads "${CMAKE_DL_LIBS}")
-  if(UNIX)
+  if(WIN32)
+    target_link_libraries("crypto_original_${case_name}" PRIVATE Ws2_32)
+  elseif(APPLE)
+    target_link_libraries("crypto_original_${case_name}" PRIVATE "-framework Security")
+  elseif(UNIX)
     target_link_libraries("crypto_original_${case_name}" PRIVATE m)
   endif()
   add_test(NAME "gmssl.original.${case_name}"
