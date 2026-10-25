@@ -72,12 +72,12 @@ int main(int argc, char **argv)
 {
     int i;
     crypto_tls_module *invalid = NULL;
-    if (argc != 2 || !argv[1] || !argv[1][0]) return 2;
+    if (argc != 4 || !argv[1] || !argv[1][0]\n        || !argv[2] || !argv[2][0] || !argv[3] || !argv[3][0]) return 2;
     if (crypto_tls_module_open(NULL, &invalid) != CRYPTO_TLS_INVALID_ARGUMENT
         || invalid || crypto_tls_module_open(".", &invalid)
             != CRYPTO_TLS_INVALID_ARGUMENT || invalid)
         return 3;
-    for (i = 0; i < RELOAD_CYCLES; ++i)
+    /* A library exporting only one of eleven symbols is rejected; a full\n     * ABI table reporting a different epoch is rejected separately. Neither\n     * failed admission may publish a host control block.\n     */\n    if (crypto_tls_module_open(argv[2], &invalid) != CRYPTO_TLS_BACKEND_ERROR\n        || invalid\n        || crypto_tls_module_open(argv[3], &invalid) != CRYPTO_TLS_BACKEND_ERROR\n        || invalid) return 4;\n    for (i = 0; i < RELOAD_CYCLES; ++i)
         if (one_cycle(argv[1], i) != 0) return 1;
     puts("Crypto C11 TLSHost: 32 real DSO open/drain/lease/release/unload cycles PASS");
     return 0;
