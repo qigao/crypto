@@ -59,4 +59,20 @@ crypto_gmssl_harden_once(
 	}
 	conn->session_id_len = session_id_len;]==])
 
-message(STATUS "Applied 3 Crypto-owned post-import UB hardening edits")
+# TLS 1.3 ServerHello is also allowed to return an empty legacy
+# session_id_echo. The decoder can represent the zero-length vector as
+# NULL; memcmp(NULL, ..., 0) is undefined. Reject mismatched lengths or
+# invalid nonempty pointers, and compare bytes only for a nonempty echo.
+crypto_gmssl_harden_once(
+  "${SOURCE_PATH}/src/tls13.c"
+  [==[	// legacy_session_id_echo
+	if (legacy_session_id_echo_len != conn->session_id_len
+		|| memcmp(legacy_session_id_echo, conn->session_id, conn->session_id_len) != 0) {]==]
+  [==[	// legacy_session_id_echo
+	if (conn->session_id_len > sizeof(conn->session_id)
+		|| legacy_session_id_echo_len != conn->session_id_len
+		|| (conn->session_id_len
+			&& (!legacy_session_id_echo
+				|| memcmp(legacy_session_id_echo, conn->session_id, conn->session_id_len) != 0))) {]==])
+
+message(STATUS "Applied 4 Crypto-owned post-import UB hardening edits")
