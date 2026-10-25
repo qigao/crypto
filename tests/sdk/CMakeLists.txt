@@ -99,8 +99,23 @@ if(CRYPTO_SDK_ENABLE_HOST_LEASE)
   set_target_properties(crypto_sdk_host_loader PROPERTIES
     C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
   target_link_libraries(crypto_sdk_host_loader PRIVATE Crypto::TLSHost)
+  # Test-only separate images: an incomplete symbol table and a full symbol
+  # table with the wrong runtime ABI. Neither may be admitted by TLSHost.
+  add_library(crypto_sdk_fake_partial SHARED fake-provider.c)
+  add_library(crypto_sdk_fake_wrong_abi SHARED fake-provider.c)
+  target_include_directories(crypto_sdk_fake_partial PRIVATE
+    "$<TARGET_PROPERTY:Crypto::TLSHost,INTERFACE_INCLUDE_DIRECTORIES>")
+  target_include_directories(crypto_sdk_fake_wrong_abi PRIVATE
+    "$<TARGET_PROPERTY:Crypto::TLSHost,INTERFACE_INCLUDE_DIRECTORIES>")
+  target_compile_definitions(crypto_sdk_fake_wrong_abi
+    PRIVATE FAKE_FULL_WRONG_ABI=1)
+  set_target_properties(crypto_sdk_fake_partial
+    crypto_sdk_fake_wrong_abi PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
   add_test(NAME crypto.installed.host_lease_unload
-    COMMAND crypto_sdk_host_loader "$<TARGET_FILE:Crypto::TLS>")
+    COMMAND crypto_sdk_host_loader "$<TARGET_FILE:Crypto::TLS>"
+      "$<TARGET_FILE:crypto_sdk_fake_partial>"
+      "$<TARGET_FILE:crypto_sdk_fake_wrong_abi>")
   set_tests_properties(crypto.installed.host_lease_unload PROPERTIES TIMEOUT 120)
   if(CRYPTO_SDK_ENABLE_HOST_LEASE_RACE)
     if(NOT UNIX)
