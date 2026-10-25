@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #ifndef SDK_CA_FILE
 #error SDK_CA_FILE is required
@@ -80,10 +81,21 @@ static int cycle(int iteration)
     w.session=session;
     if (pthread_create(&tid,NULL,drive,&w)!=0) goto done;
     thread_started=1;
-    pthread_mutex_lock(&g.mutex);
-    while (!g.entered)
-        pthread_cond_wait(&g.cond,&g.mutex);
-    pthread_mutex_unlock(&g.mutex);
+    {
+        struct timespec deadline;
+        int entered;
+        if (timespec_get(&deadline,TIME_UTC) != TIME_UTC)
+            goto done;
+        deadline.tv_sec += 10;
+        pthread_mutex_lock(&g.mutex);
+        while (!g.entered) {
+            if (pthread_cond_timedwait(&g.cond,&g.mutex,&deadline)!=0)
+                break;
+        }
+        entered=g.entered;
+        pthread_mutex_unlock(&g.mutex);
+        if (!entered) goto done;
+    }
 
     /* The TLS driver is currently inside a real borrowed send callback.
      * Another drive and any free must refuse without consuming the handle. */
