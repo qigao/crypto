@@ -129,6 +129,7 @@ include("${_crypto_root}/providers/gmssl/hardening/ubsan-undefined-behavior.cmak
 file(SHA256 "${SOURCE_PATH}/src/secp256r1.c" _p256_sha)
 file(SHA256 "${SOURCE_PATH}/src/secp384r1.c" _p384_sha)
 file(SHA256 "${SOURCE_PATH}/src/tls12.c" _tls12_sha)
+file(SHA256 "${SOURCE_PATH}/src/tls13.c" _tls13_sha)
 
 file(SHA256 "${SOURCE_PATH}/CMakeLists.txt" _cmake_sha)
 file(SHA256 "${SOURCE_PATH}/include/gmssl/tls.h" _tls_header_sha)
@@ -143,13 +144,14 @@ if(DEFINED GMSSL_ASSEMBLY_RECEIPT)
     "  \"original_port_version\": \"3.2.0#13\",\n"
     "  \"git_patch_count\": 1,\n"
     "  \"source_adaptations\": ${_n},\n"
-    "  \"crypto_hardening_edits\": 3,\n"
+    "  \"crypto_hardening_edits\": 4,\n"
     "  \"secp256r1_sha256\": \"${_p256_sha}\",\n"
     "  \"secp384r1_sha256\": \"${_p384_sha}\",\n"
     "  \"tls12_sha256\": \"${_tls12_sha}\",\n"
+    "  \"tls13_sha256\": \"${_tls13_sha}\",\n"
     "  \"cmakelists_sha256\": \"${_cmake_sha}\",\n"
     "  \"tls_header_sha256\": \"${_tls_header_sha}\",\n"
     "  \"tls_source_sha256\": \"${_tls_source_sha}\"\n"
     "}\n")
 endif()
-message(STATUS "GmSSL source assembled: one git patch + ${_n} original adaptations + 3 Crypto UB hardening edits")
+message(STATUS "GmSSL source assembled: one git patch + ${_n} original adaptations + 4 Crypto UB hardening edits")
