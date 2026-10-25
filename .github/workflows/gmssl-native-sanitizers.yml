@@ -8,6 +8,7 @@ on:
       - "tools/assemble_gmssl.cmake"
       - "tools/run_gmssl_openssl_interop.py"
       - "providers/gmssl/patches/**"
+      - "providers/gmssl/hardening/**"
       - "providers/gmssl/tests/**"
       - "providers/gmssl/provenance/**"
   workflow_dispatch:
