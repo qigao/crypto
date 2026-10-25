@@ -8,6 +8,7 @@ on:
       - ".github/workflows/gmssl-original-sanitizers.yml"
       - "cmake/qualification/**"
       - "tools/assemble_gmssl.cmake"
+      - "tools/qualification_patches/**"
       - "providers/gmssl/patches/**"
       - "providers/gmssl/tests/**"
       - "providers/gmssl/provenance/**"
@@ -61,6 +62,13 @@ jobs:
             -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
             -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF \
             "-DCMAKE_C_FLAGS=${{ matrix.flags }}"
+          # These are 3 newly discovered source UB defects, *additional*
+          # to the frozen original 40 source transformations. Never weaken
+          # UBSan or mutate the historical gmssl vcpkg 3.2.0#13 port.
+          cmake "-DGMSSL_ASSEMBLED_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_UB_PATCH_REPORT=$RUNNER_TEMP/gmssl-${{ matrix.kind }}-ub-receipt.json" \
+            -P tools/qualification_patches/gmssl-ub-fixes.cmake
+          test -s "$RUNNER_TEMP/gmssl-${{ matrix.kind }}-ub-receipt.json"
           cmake --build build-gmssl-${{ matrix.kind }} \
             --target gmssl --parallel 2
           test -s build-gmssl-${{ matrix.kind }}/bin/libgmssl.a
@@ -100,6 +108,7 @@ jobs:
           name: gmssl-original-29-${{ matrix.kind }}
           path: |
             ${{ runner.temp }}/gmssl-${{ matrix.kind }}-receipt.json
+            ${{ runner.temp }}/gmssl-${{ matrix.kind }}-ub-receipt.json
             build-gmssl-${{ matrix.kind }}/CMakeCache.txt
             build-qualify-${{ matrix.kind }}/Testing/Temporary/LastTest.log
           if-no-files-found: warn

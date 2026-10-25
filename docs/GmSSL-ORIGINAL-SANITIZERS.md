@@ -22,3 +22,34 @@ to embed GmSSL into multiple consumer DSOs. Separate work must qualify
 a single state-owning shared Crypto Provider, true OpenSSL 3 peer
 interoperability, cancellation/close and DSO quiescence before the
 vcpkg-cache 3.2.0#13 port or CNet may change.
+
+
+## M1.4 discovered native undefined behavior — no sanitizer suppression
+
+The original 29-contract sanitizer matrix found **three independent C
+undefined behavior contracts** in the source currently assembled by the
+historic vcpkg port. Two 32-bit finite-field half operations computed the
+high carry bit as signed \`(c & 1) << 31\` in secp256r1.c and the P-384
+verifier backport secp384r1.c. The TLS 1.2 ServerHello decoder called
+\`memcpy(dst, NULL, 0)\` when an empty Session ID was valid. Non-sanitized
+source tests and independent OpenSSL interoperability passed; UBSan
+correctly rejected these operations.
+
+The additive, fail-closed **Crypto-only candidate** source patch at
+\`tools/qualification_patches/gmssl-ub-fixes.cmake\` fixes:
+- P-256/P-384: explicitly cast the carry to \`uint32_t\` before the
+  31-bit shift, keeping limb arithmetic unsigned.
+- TLS 1.2: validate Session ID length against the destination and
+  a required non-NULL source for nonzero lengths; do not call memcpy
+  for an empty ID.
+
+Every patch must match exactly one pinned source anchor. CI stores
+a new post-patch SHA-256 receipt for the three changed source files;
+the **40 original GmSSL patches and 92 imported Git blobs are not
+modified**, and the old vcpkg-cache \`3.2.0#13\` port stays frozen.
+The full **29×3 original source suite** must still pass under both
+ASan/UBSan/LeakSanitizer and TSan with fail-on-diagnostic, no suppressions.
+
+This is native source hardening of a candidate, not a Crypto Provider
+release, and the safety changes still need the separate real OpenSSL
+peer regression after incorporation into the eventual reviewed provider.
