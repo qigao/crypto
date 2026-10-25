@@ -1,0 +1,7 @@
+CRYPTO_PROVIDER_0_1 {
+  global:
+    crypto_provider_abi_0_1_required;
+    crypto_provider_runtime_abi;
+    crypto_provider_sm3;
+  local: *;
+};

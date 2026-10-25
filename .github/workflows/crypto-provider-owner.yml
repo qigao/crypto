@@ -1,0 +1,159 @@
+name: Crypto 0.1 shared Provider native single-owner conformance
+
+# Real pinned GmSSL source is built privately into ONE shared Crypto DSO.
+# No TLS API or production CNet cutover is claimed by this SM3 milestone.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/crypto-provider-owner.yml"
+      - "include/crypto/**"
+      - "src/provider_sm3.c"
+      - "cmake/CryptoConfig.cmake.in"
+      - "cmake/crypto-provider.*"
+      - "CMakeLists.txt"
+      - "tests/installed/**"
+      - "tools/audit_crypto_owner.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-owner:
+    name: ${{ matrix.os }} installed and relocated one shared owner
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - name: Checkout Crypto candidate
+        uses: actions/checkout@v4
+      - name: Checkout pinned GmSSL original source
+        uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Build exact private GmSSL source with all five UB corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          test "$(git -C _gmssl-upstream rev-parse HEAD)" = \
+            7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/gmssl-assembly-receipt.json" \
+            -P tools/assemble_gmssl.cmake
+          cmake "-DGMSSL_ASSEMBLED_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_UB_PATCH_REPORT=$RUNNER_TEMP/gmssl-ub-receipt.json" \
+            -P tools/qualification_patches/gmssl-ub-fixes.cmake
+          python3 - <<'PY'
+          import json, os, pathlib
+          p=pathlib.Path(os.environ['RUNNER_TEMP'])/'gmssl-ub-receipt.json'
+          r=json.loads(p.read_text())
+          assert r['source_ub_fixed_sites'] == 5, r
+          print('Exact five GmSSL native UB corrections verified')
+          PY
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+          else
+            generator=(-G Ninja)
+          fi
+          cmake -S _gmssl-upstream -B build-gmssl "${generator[@]}" \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
+            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
+            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl --target gmssl --config Release --parallel 2
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            test -s build-gmssl/bin/Release/gmssl.lib
+          else
+            test -s build-gmssl/bin/libgmssl.a
+          fi
+      - name: Build and install one versioned shared Crypto Provider owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+            lib="$GITHUB_WORKSPACE/build-gmssl/bin/Release/gmssl.lib"
+          else
+            generator=(-G Ninja)
+            lib="$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
+          fi
+          prefix="$RUNNER_TEMP/crypto-provider-sdk"
+          cmake -S . -B build-crypto "${generator[@]}" \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DCRYPTO_GMSSL_LIBRARY=$lib" \
+            "-DCMAKE_INSTALL_PREFIX=$prefix"
+          cmake --build build-crypto --config Release --parallel 2
+          cmake --install build-crypto --config Release
+      - name: Run separately installed C11/C++17 and two native modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$RUNNER_TEMP/crypto-provider-sdk"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+            export PATH="$(cygpath -u "$prefix")/bin:$PATH"
+          elif [[ "$RUNNER_OS" == macOS ]]; then
+            generator=(-G Ninja)
+            export DYLD_LIBRARY_PATH="$prefix/lib:${DYLD_LIBRARY_PATH:-}"
+          else
+            generator=(-G Ninja)
+            export LD_LIBRARY_PATH="$prefix/lib:${LD_LIBRARY_PATH:-}"
+          fi
+          cmake -S tests/installed -B build-installed "${generator[@]}" \
+            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$prefix"
+          cmake --build build-installed --config Release --parallel 2
+          ctest --test-dir build-installed -C Release \
+            --output-on-failure --no-tests=error
+          python3 tools/audit_crypto_owner.py \
+            --prefix "$prefix" --build-dir build-installed \
+            --report build-installed/crypto-owner.json
+      - name: Relocate installed Crypto and reject stale SDK paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$RUNNER_TEMP/crypto-provider-sdk"
+          moved="$RUNNER_TEMP/crypto-provider-sdk-relocated"
+          test -d "$prefix"
+          test ! -e "$moved"
+          mv "$prefix" "$moved"
+          test ! -e "$prefix"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+            export PATH="$(cygpath -u "$moved")/bin:$PATH"
+          elif [[ "$RUNNER_OS" == macOS ]]; then
+            generator=(-G Ninja)
+            export DYLD_LIBRARY_PATH="$moved/lib:${DYLD_LIBRARY_PATH:-}"
+          else
+            generator=(-G Ninja)
+            export LD_LIBRARY_PATH="$moved/lib:${LD_LIBRARY_PATH:-}"
+          fi
+          cmake -S tests/installed -B build-relocated "${generator[@]}" \
+            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$moved"
+          cmake --build build-relocated --config Release --parallel 2
+          ctest --test-dir build-relocated -C Release \
+            --output-on-failure --no-tests=error
+          python3 tools/audit_crypto_owner.py \
+            --prefix "$moved" --build-dir build-relocated \
+            --report build-relocated/crypto-owner-relocated.json
+      - name: Upload exact binary and ABI owner evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crypto-provider-0.1-native-${{ matrix.os }}
+          path: |
+            build-installed/crypto-owner.json
+            build-relocated/crypto-owner-relocated.json
+            ${{ runner.temp }}/gmssl-assembly-receipt.json
+            ${{ runner.temp }}/gmssl-ub-receipt.json
+          if-no-files-found: warn
