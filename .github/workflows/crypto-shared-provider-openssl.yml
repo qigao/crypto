@@ -1,0 +1,113 @@
+name: Crypto shared C11 facade vs independent OpenSSL 3 (TLS/X509)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/crypto-shared-provider-openssl.yml"
+      - "CMakeLists.txt"
+      - "src/**"
+      - "include/crypto/**"
+      - "tests/sdk/openssl-client.c"
+      - "tests/sdk/CMakeLists.txt"
+      - "tools/qualify_crypto_shared_openssl.sh"
+      - "tools/assemble_gmssl.cmake"
+      - "providers/gmssl/hardening/**"
+      - "providers/gmssl/patches/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-facade-interop:
+    name: "${{ matrix.os }} installed Crypto facade TLS 1.2/1.3 vs OpenSSL 3"
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - name: Exact Crypto source
+        uses: actions/checkout@v4
+      - name: Original GmSSL 3.2 pinned SHA
+        uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Verify original 92-source provenance + 40-step assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          test "$(git -C _gmssl-upstream rev-parse HEAD)" = \
+            7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/crypto-facade-assembly.json" \
+            -P tools/assemble_gmssl.cmake
+          test -s "$RUNNER_TEMP/crypto-facade-assembly.json"
+      - name: Compile native private PIC GmSSL with real TLS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S _gmssl-upstream -B build-gmssl -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
+            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
+            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl --target gmssl --parallel 2
+          test -s build-gmssl/bin/libgmssl.a
+      - name: Build and install only Crypto shared C11 provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-provider -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DCRYPTO_GMSSL_STATIC=$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
+          cmake --build build-provider --parallel 2
+          cmake --install build-provider --prefix "$GITHUB_WORKSPACE/_installed"
+          test -s "$GITHUB_WORKSPACE/_installed/include/crypto/tls.h"
+      - name: Build independent installed C11 network consumer (no GmSSL)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S tests/sdk -B build-sdk -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCRYPTO_SDK_ENABLE_OPENSSL_PEER=ON \
+            "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/_installed" \
+            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
+          cmake --build build-sdk --parallel 2
+          test -x build-sdk/crypto_sdk_openssl_client
+          ctest --test-dir build-sdk --output-on-failure --no-tests=error --timeout 90
+      - name: Real TLS peer and CA/SAN fail-closed matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            openssl_prefix="$(brew --prefix openssl@3)"
+            test -x "$openssl_prefix/bin/openssl"
+            export PATH="$openssl_prefix/bin:$PATH"
+          fi
+          openssl version | grep -q '^OpenSSL 3[.]'
+          bash tools/qualify_crypto_shared_openssl.sh \
+            "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_client" \
+            "$RUNNER_TEMP/crypto-shared-peer" 9740
+      - name: Upload independent test evidence without private keys
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-shared-openssl-${{ matrix.os }}-evidence
+          path: |
+            ${{ runner.temp }}/crypto-facade-assembly.json
+            ${{ runner.temp }}/crypto-shared-peer/*.out
+            ${{ runner.temp }}/crypto-shared-peer/*.err
+            ${{ runner.temp }}/crypto-shared-peer/*.log
+            build-sdk/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
