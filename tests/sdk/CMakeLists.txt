@@ -29,6 +29,10 @@ target_compile_definitions(crypto_sdk_consumer PRIVATE
   "SDK_SERVER_CERT_FILE=\"${_cert}\""
   "SDK_SERVER_KEY_FILE=\"${_key}\"")
 add_executable(crypto_sdk_dso dso.c)
+# The DSO host is NOT linked to Crypto: use only the installed public
+# header path advertised by the imported package.
+target_include_directories(crypto_sdk_dso PRIVATE
+  "$<TARGET_PROPERTY:Crypto::TLS,INTERFACE_INCLUDE_DIRECTORIES>")
 set_target_properties(crypto_sdk_dso PROPERTIES
   C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 if(UNIX AND NOT APPLE)
