@@ -1,0 +1,19 @@
+@PACKAGE_INIT@
+# Compatibility name for the SM3 C11 Provider v0.1. The only physical image
+# is Crypto::TLS (libcrypto_tls); this config never imports a second DSO.
+include(CMakeFindDependencyMacro)
+find_dependency(CryptoTLS 0.1 CONFIG)
+if(NOT TARGET Crypto::TLS OR NOT TARGET Crypto::Provider)
+  message(FATAL_ERROR "Crypto::Provider must be the installed view of Crypto::TLS")
+endif()
+get_target_property(_crypto_provider_kind Crypto::Provider TYPE)
+if(NOT _crypto_provider_kind STREQUAL "INTERFACE_LIBRARY")
+  message(FATAL_ERROR "Crypto::Provider must not own a second native image")
+endif()
+get_target_property(_crypto_provider_links Crypto::Provider INTERFACE_LINK_LIBRARIES)
+if(NOT "Crypto::TLS" IN_LIST _crypto_provider_links)
+  message(FATAL_ERROR "Crypto::Provider must resolve the same Crypto::TLS imported image")
+endif()
+unset(_crypto_provider_kind)
+unset(_crypto_provider_links)
+check_required_components(Crypto)
