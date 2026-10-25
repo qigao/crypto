@@ -106,9 +106,10 @@ jobs:
           cmake -S tests/sdk -B build-sdk "${generator[@]}" \
             -DCMAKE_BUILD_TYPE=Release \
             "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/_installed" \
+            -DCRYPTO_SDK_ENABLE_HOST_LEASE=ON \
             "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
           cmake --build build-sdk --config Release --parallel 2
-          test "$(ctest --test-dir build-sdk -C Release -N | sed -n 's/^Total Tests: //p')" = 2
+          test "$(ctest --test-dir build-sdk -C Release -N | sed -n 's/^Total Tests: //p')" = 3
           ctest --test-dir build-sdk -C Release --output-on-failure \
             --no-tests=error --timeout 90
       - name: Verify ELF public export surface excludes all GmSSL APIs
