@@ -61,12 +61,32 @@ elseif(UNIX)
     "LINKER:--exclude-libs,ALL")
 endif()
 
-install(TARGETS CryptoTLSProvider
+# Host loader owns only explicit OS dynamic-library references and lease
+# control blocks; it never links or embeds GmSSL nor the Crypto TLS DSO.
+add_library(CryptoTLSHost STATIC src/crypto_tls_loader.c)
+add_library(Crypto::TLSHost ALIAS CryptoTLSHost)
+set_target_properties(CryptoTLSHost PROPERTIES
+  OUTPUT_NAME crypto_tls_host EXPORT_NAME TLSHost
+  C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO
+  POSITION_INDEPENDENT_CODE YES)
+target_include_directories(CryptoTLSHost PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+if(MSVC)
+  target_compile_options(CryptoTLSHost PRIVATE /experimental:c11atomics)
+endif()
+if(WIN32)
+  target_link_libraries(CryptoTLSHost PUBLIC Kernel32)
+elseif(UNIX)
+  target_link_libraries(CryptoTLSHost PUBLIC "${CMAKE_DL_LIBS}")
+endif()
+
+install(TARGETS CryptoTLSProvider CryptoTLSHost
   EXPORT CryptoTLSTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES include/crypto/tls.h
+install(FILES include/crypto/tls.h include/crypto/loader.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/crypto)
 install(EXPORT CryptoTLSTargets
   NAMESPACE Crypto:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
