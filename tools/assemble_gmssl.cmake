@@ -61,6 +61,29 @@ function(vcpkg_replace_string file_path find_text replace_text)
   file(READ "${file_path}" _old)
   string(FIND "${_old}" "${find_text}" _offset)
   if(_offset EQUAL -1)
+    # The frozen ALPN capacity module contains two older narrow text
+    # replacements that were superseded by the preceding whole-function
+    # gmssl_replace_once(). Do NOT silently accept arbitrary misses.
+    # Check *both* exact legacy anchors and the already-applied secure
+    # bounded-list semantics before classifying either as redundant.
+    set(_alpn_redundant FALSE)
+    if(file_path MATCHES "/src/tls[.]c$"
+       AND ("${replace_text}" STREQUAL "size_t alpn_wire_len = 0;"
+            OR "${replace_text}" MATCHES "alpn_wire_len > 65535"))
+      string(FIND "${_old}" "ctx->alpn_protocols = protocols;" _has_borrowed)
+      string(FIND "${_old}" "TLS_ALPN_PROTOCOL_NAME_LIST_MAX_SIZE = 65535" _has_bound)
+      string(FIND "${_old}" "wire_len > TLS_ALPN_PROTOCOL_NAME_LIST_MAX_SIZE - 1 - protocol_len" _has_guard)
+      if(NOT _has_borrowed EQUAL -1
+         AND NOT _has_bound EQUAL -1
+         AND NOT _has_guard EQUAL -1)
+        set(_alpn_redundant TRUE)
+      endif()
+    endif()
+    if(_alpn_redundant)
+      message(STATUS
+        "Verified redundant historical ALPN text patch already superseded by the preceding bounded source rewrite")
+      return()
+    endif()
     message(FATAL_ERROR "Missing upstream adaptation anchor in ${file_path}")
   endif()
   string(REPLACE "${find_text}" "${replace_text}" _new "${_old}")
