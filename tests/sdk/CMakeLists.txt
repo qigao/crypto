@@ -84,3 +84,41 @@ if(CRYPTO_SDK_ENABLE_OPENSSL_PEER)
     C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
   target_link_libraries(crypto_sdk_openssl_client PRIVATE Crypto::TLS)
 endif()
+
+# Host-side lease tests intentionally link ONLY the installed static
+# Crypto::TLSHost helper. They do not link the native Crypto TLS DSO or GmSSL.
+option(CRYPTO_SDK_ENABLE_HOST_LEASE
+  "Qualify C11 host-side dynamic loader admission and unload pinning" OFF)
+option(CRYPTO_SDK_ENABLE_HOST_LEASE_RACE
+  "Qualify true pthread TLS callback vs DSO unload under TSan" OFF)
+if(CRYPTO_SDK_ENABLE_HOST_LEASE)
+  if(NOT TARGET Crypto::TLSHost)
+    message(FATAL_ERROR "Installed Crypto::TLSHost target required")
+  endif()
+  add_executable(crypto_sdk_host_loader loader.c)
+  set_target_properties(crypto_sdk_host_loader PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+  target_link_libraries(crypto_sdk_host_loader PRIVATE Crypto::TLSHost)
+  add_test(NAME crypto.installed.host_lease_unload
+    COMMAND crypto_sdk_host_loader "$<TARGET_FILE:Crypto::TLS>")
+  set_tests_properties(crypto.installed.host_lease_unload PROPERTIES TIMEOUT 120)
+  if(CRYPTO_SDK_ENABLE_HOST_LEASE_RACE)
+    if(NOT UNIX)
+      message(FATAL_ERROR "Host DSO callback-race tests require native pthreads")
+    endif()
+    find_package(Threads REQUIRED)
+    add_executable(crypto_sdk_host_loader_race loader_race.c)
+    set_target_properties(crypto_sdk_host_loader_race PROPERTIES
+      C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    target_link_libraries(crypto_sdk_host_loader_race
+      PRIVATE Crypto::TLSHost Threads::Threads)
+    target_compile_definitions(crypto_sdk_host_loader_race PRIVATE
+      "SDK_CA_FILE=\"${_ca}\"")
+    add_test(NAME crypto.installed.host_lease_callback_race
+      COMMAND crypto_sdk_host_loader_race "$<TARGET_FILE:Crypto::TLS>")
+    set_tests_properties(crypto.installed.host_lease_callback_race
+      PROPERTIES TIMEOUT 120)
+  endif()
+elseif(CRYPTO_SDK_ENABLE_HOST_LEASE_RACE)
+  message(FATAL_ERROR "Host DSO lease race requires CRYPTO_SDK_ENABLE_HOST_LEASE")
+endif()
