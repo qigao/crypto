@@ -1,0 +1,113 @@
+name: Crypto shared Provider concurrent cancel/close source TSan (qualification)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/crypto-shared-provider-lifecycle-tsan.yml"
+      - "CMakeLists.txt"
+      - "src/**"
+      - "include/crypto/**"
+      - "tests/sdk/**"
+      - "tools/assemble_gmssl.cmake"
+      - "providers/gmssl/hardening/**"
+      - "providers/gmssl/patches/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  concurrent-provider-tsan:
+    name: Linux instrumented real GmSSL + shared DSO + borrowed callback cancellation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TSAN_OPTIONS: halt_on_error=1:exitcode=66
+    steps:
+      - name: Crypto exact candidate
+        uses: actions/checkout@v4
+      - name: Pinned original GmSSL 3.2
+        uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Replay immutable original source plus separate Crypto UB fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          test "$(git -C _gmssl-upstream rev-parse HEAD)" = \
+            7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/gmssl-provider-tsan-receipt.json" \
+            -P tools/assemble_gmssl.cmake
+          test -s "$RUNNER_TEMP/gmssl-provider-tsan-receipt.json"
+      - name: Build instrumented real GmSSL static PIC with thread sanitizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags="-O1 -g -fno-omit-frame-pointer -fsanitize=thread"
+          cmake -S _gmssl-upstream -B build-gmssl-tsan -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            "-DCMAKE_C_FLAGS=$flags" \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON \
+            -DENABLE_SECP256R1=ON -DENABLE_SHA2=ON -DENABLE_AES=ON \
+            -DENABLE_AES_CCM=OFF -DENABLE_SHA1=ON \
+            -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl-tsan --target gmssl --parallel 2
+          test -s build-gmssl-tsan/bin/libgmssl.a
+      - name: Instrument and install exact shared Crypto TLS Provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags="-O1 -g -fno-omit-frame-pointer -fsanitize=thread"
+          cmake -S . -B build-provider-tsan -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            "-DCMAKE_C_FLAGS=$flags" \
+            "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=thread" \
+            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DCRYPTO_GMSSL_STATIC=$GITHUB_WORKSPACE/build-gmssl-tsan/bin/libgmssl.a"
+          cmake --build build-provider-tsan --parallel 2
+          cmake --install build-provider-tsan \
+            --prefix "$GITHUB_WORKSPACE/_installed-tsan"
+          test -s "$GITHUB_WORKSPACE/_installed-tsan/lib/libcrypto_tls.so"
+      - name: Build independent TSan installed SDK consumer with pthread concurrency
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags="-O1 -g -fno-omit-frame-pointer -fsanitize=thread"
+          cmake -S tests/sdk -B build-sdk-tsan -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            "-DCMAKE_C_FLAGS=$flags" \
+            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread" \
+            "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/_installed-tsan" \
+            -DCRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE=ON \
+            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
+          cmake --build build-sdk-tsan --parallel 2
+          test "$(ctest --test-dir build-sdk-tsan -N |
+            sed -n 's/^Total Tests: //p')" = 3
+      - name: Repeat actual callback-in-flight cancellation, BUSY destroy and quiescence
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build-sdk-tsan \
+            -R '^crypto[.]installed[.]inflight_cancel_busy_destroy$' \
+            --no-tests=error --output-on-failure --timeout 120 \
+            --repeat until-fail:3
+      - name: Preserve exact source, shared DSO and concurrent TSan proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-shared-provider-tsan-lifetime
+          path: |
+            ${{ runner.temp }}/gmssl-provider-tsan-receipt.json
+            build-gmssl-tsan/CMakeCache.txt
+            build-provider-tsan/CMakeCache.txt
+            build-sdk-tsan/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
