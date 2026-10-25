@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <type_traits>
 
 static_assert(sizeof(crypto_provider_result) == sizeof(int),
@@ -21,6 +22,11 @@ int main() {
         reinterpret_cast<const uint8_t*>("abc"), 3,
         out.data(), out.size()) != CRYPTO_PROVIDER_OK)
     return 2;
-  if (std::memcmp(out.data(), expected, out.size())) return 3;
+  if (std::memcmp(out.data(), expected, out.size())) {
+    std::fprintf(stderr, "C++17 SM3(abc) observed=");
+    for(auto byte:out) std::fprintf(stderr, "%02x", byte);
+    std::fprintf(stderr, "\\n");
+    return 3;
+  }
   return 0;
 }

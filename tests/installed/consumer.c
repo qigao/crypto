@@ -18,7 +18,15 @@ int main(void) {
   CHECK(crypto_provider_runtime_abi() == CRYPTO_PROVIDER_ABI_VERSION);
   CHECK(crypto_provider_sm3((const uint8_t*)"abc",3,digest,sizeof(digest))
         == CRYPTO_PROVIDER_OK);
-  CHECK(memcmp(digest, expected, sizeof(expected)) == 0);
+  if (memcmp(digest, expected, sizeof(expected)) != 0) {
+    size_t j;
+    fprintf(stderr, "SM3(abc) observed=");
+    for (j=0u;j<sizeof(digest);++j) fprintf(stderr, "%02x", digest[j]);
+    fprintf(stderr, " expected=");
+    for (j=0u;j<sizeof(expected);++j) fprintf(stderr, "%02x", expected[j]);
+    fprintf(stderr, "\\n");
+    return __LINE__;
+  }
   memset(digest, 0x5a, sizeof(digest));
   CHECK(crypto_provider_sm3(NULL,1,digest,sizeof(digest))
         == CRYPTO_PROVIDER_INVALID_ARGUMENT);
