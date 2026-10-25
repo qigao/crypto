@@ -70,7 +70,39 @@ crypto_replace_exactly_once("${_gmssl}/src/tls12.c"
 # The TLS 1.3 ServerHello may also echo an empty legacy session ID.
 # The decoder then legitimately exposes (NULL,0). Avoid memcmp(NULL,
 # session_id,0) and reject nonzero spans with invalid pointers/lengths.
-crypto_replace_exactly_once("${_gmssl}/src/tls13.c"
+# TLS 1.3 uses the same legacy-session-ID echo comparison in exactly
+# TWO distinct protocol states: HelloRetryRequest and ServerHello. Fix
+# both, but never accept a third occurrence or silently skip a path.
+function(crypto_replace_exactly_twice path needle replacement)
+  if(NOT EXISTS "${path}" OR "${needle}" STREQUAL "")
+    message(FATAL_ERROR "Missing TLS 1.3 source or empty UB patch anchor")
+  endif()
+  file(READ "${path}" _source)
+  set(_remaining "${_source}")
+  set(_count 0)
+  string(LENGTH "${needle}" _len)
+  while(TRUE)
+    string(FIND "${_remaining}" "${needle}" _at)
+    if(_at EQUAL -1)
+      break()
+    endif()
+    math(EXPR _count "${_count} + 1")
+    math(EXPR _after "${_at} + ${_len}")
+    string(SUBSTRING "${_remaining}" ${_after} -1 _remaining)
+  endwhile()
+  if(NOT _count EQUAL 2)
+    message(FATAL_ERROR
+      "TLS 1.3 legacy Session ID guard expected in exactly HelloRetryRequest "
+      "and ServerHello: actual ${_count} matches in ${path}")
+  endif()
+  string(REPLACE "${needle}" "${replacement}" _patched "${_source}")
+  if("${_patched}" STREQUAL "${_source}")
+    message(FATAL_ERROR "No-op TLS 1.3 source UB correction")
+  endif()
+  file(WRITE "${path}" "${_patched}")
+endfunction()
+
+crypto_replace_exactly_twice("${_gmssl}/src/tls13.c"
 [==[
 	// legacy_session_id_echo
 	if (legacy_session_id_echo_len != conn->session_id_len
@@ -104,11 +136,11 @@ if(DEFINED GMSSL_UB_PATCH_REPORT)
   file(WRITE "${GMSSL_UB_PATCH_REPORT}"
     "{\n"
     "  \"classification\": \"CRYPTO_CANDIDATE_3_SOURCE_UB_FIXES_NOT_VCPKG_RELEASE\",\n"
-    "  \"source_ub_fixes\": 4,\n"
+    "  \"source_ub_fixed_sites\": 5,\n"
     "  \"secp256r1_sha256\": \"${_p256}\",\n"
     "  \"secp384r1_sha256\": \"${_p384}\",\n"
     "  \"tls12_sha256\": \"${_tls12}\",\n"
     "  \"tls13_sha256\": \"${_tls13}\"\n"
     "}\n")
 endif()
-message(STATUS "Crypto GmSSL candidate: four strict source UB fixes (P-256/P-384 carry, TLS 1.2 zero Session ID memcpy, TLS 1.3 zero legacy Session ID memcmp)")
+message(STATUS "Crypto GmSSL candidate: five exact UB source sites fixed in four files (EC carry, TLS1.2, TLS1.3 HRR and ServerHello)")

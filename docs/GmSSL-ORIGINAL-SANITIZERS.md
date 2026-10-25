@@ -71,3 +71,21 @@ including the SHA-256 of the patched \`src/tls13.c\`. All 29 original
 source tests remain enabled × 3 repetitions under ASan/UBSan/LSan and
 TSan; none is XFAILed or disabled. Original upstream/port input bytes
 and the \`vcpkg-cache 3.2.0#13\` package remain unchanged.
+
+
+### TLS 1.3 includes TWO separate legacy echo guards
+
+The source preflight correctly rejected a proposed *single-site*
+\`memcmp(NULL, session_id, 0)\` fix: the original GmSSL TLS 1.3 state
+machine contains the same legacy Session ID check in both
+\`tls13_recv_hello_retry_request()\` **and**
+\`tls13_recv_server_hello()\`. The Crypto candidate now replaces
+the identical unsafe code at **exactly two** matching locations,
+verifies the match count first, preserves size and nonempty-source
+validation, and rejects any unexpected source drift.
+
+The receipt distinguishes **five UB source sites across four files**
+(P-256 carry, P-384 carry, TLS 1.2 empty session ID, and both TLS
+1.3 HelloRetryRequest and ServerHello empty legacy session ID
+checks). Both original TLS 1.3 cases remain enabled; no sanitizer
+suppression or unqualified skip.
