@@ -1,0 +1,15 @@
+CRYPTO_TLS_1 {
+  global:
+    crypto_tls_abi_version;
+    crypto_tls_provider_create;
+    crypto_tls_provider_destroy;
+    crypto_tls_provider_session_count;
+    crypto_tls_session_create;
+    crypto_tls_session_handshake;
+    crypto_tls_session_send;
+    crypto_tls_session_receive;
+    crypto_tls_session_shutdown;
+    crypto_tls_session_cancel;
+    crypto_tls_session_destroy;
+  local: *;
+};
