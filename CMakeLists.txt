@@ -19,7 +19,7 @@ set_target_properties(PrivateGmSSL PROPERTIES
   IMPORTED_LOCATION "${CRYPTO_GMSSL_STATIC}"
   INTERFACE_INCLUDE_DIRECTORIES "${CRYPTO_GMSSL_SOURCE}/include")
 
-add_library(CryptoTLSProvider SHARED src/crypto_tls_gmssl.c)
+add_library(CryptoTLSProvider SHARED src/crypto_tls_gmssl.c src/provider_sm3.c)
 add_library(Crypto::TLS ALIAS CryptoTLSProvider)
 set_target_properties(CryptoTLSProvider PROPERTIES
   OUTPUT_NAME crypto_tls
@@ -35,9 +35,18 @@ target_include_directories(CryptoTLSProvider
 )
 target_compile_definitions(CryptoTLSProvider PRIVATE
   CRYPTO_TLS_BUILD_DLL=1
+  CRYPTO_PROVIDER_BUILDING=1
   ENABLE_TLS ENABLE_SECP256R1 ENABLE_SECP384R1
   ENABLE_SHA1 ENABLE_SHA2 ENABLE_AES)
 target_link_libraries(CryptoTLSProvider PRIVATE PrivateGmSSL)
+
+# One physical shared image owns the private GmSSL archive. The SM3
+# Crypto::Provider CMake view is an INTERFACE alias of Crypto::TLS, not a
+# second SHARED/STATIC binary. Export both views from one target set.
+add_library(CryptoProviderView INTERFACE)
+add_library(Crypto::Provider ALIAS CryptoProviderView)
+set_target_properties(CryptoProviderView PROPERTIES EXPORT_NAME Provider)
+target_link_libraries(CryptoProviderView INTERFACE CryptoTLSProvider)
 
 if(MSVC)
   # MSVC C11 stdatomic.h remains an explicit opt-in on VS 2026. Use
@@ -81,12 +90,12 @@ elseif(UNIX)
   target_link_libraries(CryptoTLSHost PUBLIC "${CMAKE_DL_LIBS}")
 endif()
 
-install(TARGETS CryptoTLSProvider CryptoTLSHost
+install(TARGETS CryptoTLSProvider CryptoTLSHost CryptoProviderView
   EXPORT CryptoTLSTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES include/crypto/tls.h include/crypto/loader.h
+install(FILES include/crypto/tls.h include/crypto/loader.h include/crypto/provider.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/crypto)
 install(EXPORT CryptoTLSTargets
   NAMESPACE Crypto:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
@@ -101,3 +110,18 @@ install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/CryptoTLSConfig.cmake"
   "${CMAKE_CURRENT_BINARY_DIR}/CryptoTLSConfigVersion.cmake"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
+
+# The Crypto package exposes a provider-neutral SM3 interface view over the
+# exact same physical crypto_tls DLL/dylib/so imported by CryptoTLSConfig.
+# Do not install a second GmSSL-bearing crypto_provider image.
+configure_package_config_file(
+  cmake/CryptoConfig.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/CryptoConfig.cmake"
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Crypto)
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/CryptoConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/CryptoConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/CryptoConfigVersion.cmake"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Crypto)
