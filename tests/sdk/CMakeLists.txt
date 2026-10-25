@@ -52,3 +52,23 @@ add_test(NAME crypto.installed.dso_unload
   COMMAND crypto_sdk_dso "$<TARGET_FILE:Crypto::TLS>")
 set_tests_properties(crypto.installed.real_tls12_tls13
   crypto.installed.dso_unload PROPERTIES TIMEOUT 90)
+
+option(CRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE
+  "Build real borrowed-callback race test (Unix native only)" OFF)
+if(CRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE)
+  if(NOT UNIX)
+    message(FATAL_ERROR "Concurrent pthread lifecycle gate needs a Unix native target")
+  endif()
+  find_package(Threads REQUIRED)
+  add_executable(crypto_sdk_concurrency concurrency.c)
+  set_target_properties(crypto_sdk_concurrency PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+  target_link_libraries(crypto_sdk_concurrency
+    PRIVATE Crypto::TLS Threads::Threads)
+  target_compile_definitions(crypto_sdk_concurrency PRIVATE
+    "SDK_CA_FILE=\"${_ca}\"")
+  add_test(NAME crypto.installed.inflight_cancel_busy_destroy
+    COMMAND crypto_sdk_concurrency)
+  set_tests_properties(crypto.installed.inflight_cancel_busy_destroy
+    PROPERTIES TIMEOUT 60)
+endif()
