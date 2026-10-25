@@ -72,3 +72,15 @@ if(CRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE)
   set_tests_properties(crypto.installed.inflight_cancel_busy_destroy
     PROPERTIES TIMEOUT 60)
 endif()
+
+option(CRYPTO_SDK_ENABLE_OPENSSL_PEER
+  "Compile installed C11 facade TCP client for external OpenSSL 3 peers" OFF)
+if(CRYPTO_SDK_ENABLE_OPENSSL_PEER)
+  if(NOT UNIX)
+    message(FATAL_ERROR "The independent OpenSSL socket-client gate is POSIX only")
+  endif()
+  add_executable(crypto_sdk_openssl_client openssl-client.c)
+  set_target_properties(crypto_sdk_openssl_client PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+  target_link_libraries(crypto_sdk_openssl_client PRIVATE Crypto::TLS)
+endif()
