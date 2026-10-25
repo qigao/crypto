@@ -58,7 +58,7 @@ jobs:
             -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
             -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
           cmake --build build-gmssl --target gmssl --parallel 2
-          test -s build-gmssl/libgmssl.a
+          test -s build-gmssl/bin/libgmssl.a
       - name: Compile and run five unchanged original provider contracts
         shell: bash
         run: |
@@ -66,7 +66,7 @@ jobs:
           cmake -S cmake/qualification -B build-qualify -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             "-DGMSSL_ASSEMBLED_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
-            "-DGMSSL_ASSEMBLED_LIBRARY=$GITHUB_WORKSPACE/build-gmssl/libgmssl.a"
+            "-DGMSSL_ASSEMBLED_LIBRARY=$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
           cmake --build build-qualify --parallel 2
           ctest --test-dir build-qualify --output-on-failure \
             --no-tests=error --timeout 60
