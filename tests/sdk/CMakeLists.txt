@@ -1,0 +1,50 @@
+cmake_minimum_required(VERSION 3.21)
+project(CryptoInstalledC11Consumer LANGUAGES C)
+include(CTest)
+find_package(CryptoTLS CONFIG REQUIRED)
+
+# This project is configured independently against the *installed* prefix.
+# Its ONLY public dependency is Crypto::TLS and <crypto/tls.h>.
+if(NOT DEFINED CRYPTO_TEST_FIXTURES)
+  message(FATAL_ERROR "CRYPTO_TEST_FIXTURES must point to original cert fixtures")
+endif()
+foreach(_cert IN ITEMS
+    external-io-ca-cert.pem
+    external-io-server-cert.pem
+    external-io-server-key.pem)
+  if(NOT EXISTS "${CRYPTO_TEST_FIXTURES}/${_cert}")
+    message(FATAL_ERROR "Missing original external IO fixture ${_cert}")
+  endif()
+endforeach()
+file(TO_CMAKE_PATH "${CRYPTO_TEST_FIXTURES}/external-io-ca-cert.pem" _ca)
+file(TO_CMAKE_PATH "${CRYPTO_TEST_FIXTURES}/external-io-server-cert.pem" _cert)
+file(TO_CMAKE_PATH "${CRYPTO_TEST_FIXTURES}/external-io-server-key.pem" _key)
+
+add_executable(crypto_sdk_consumer consumer.c)
+set_target_properties(crypto_sdk_consumer PROPERTIES
+  C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+target_link_libraries(crypto_sdk_consumer PRIVATE Crypto::TLS)
+target_compile_definitions(crypto_sdk_consumer PRIVATE
+  "SDK_CA_FILE=\"${_ca}\""
+  "SDK_SERVER_CERT_FILE=\"${_cert}\""
+  "SDK_SERVER_KEY_FILE=\"${_key}\"")
+add_executable(crypto_sdk_dso dso.c)
+set_target_properties(crypto_sdk_dso PROPERTIES
+  C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+if(UNIX AND NOT APPLE)
+  target_link_libraries(crypto_sdk_dso PRIVATE "${CMAKE_DL_LIBS}")
+elseif(APPLE)
+  target_link_libraries(crypto_sdk_dso PRIVATE "${CMAKE_DL_LIBS}")
+endif()
+# Windows requires the installed Crypto DLL beside the exe at runtime. The
+# same copy is harmless on macOS/Linux; provider source is still one DSO.
+add_custom_command(TARGET crypto_sdk_consumer POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "$<TARGET_FILE:Crypto::TLS>" "$<TARGET_FILE_DIR:crypto_sdk_consumer>"
+  VERBATIM)
+add_test(NAME crypto.installed.real_tls12_tls13
+  COMMAND crypto_sdk_consumer)
+add_test(NAME crypto.installed.dso_unload
+  COMMAND crypto_sdk_dso "$<TARGET_FILE:Crypto::TLS>")
+set_tests_properties(crypto.installed.real_tls12_tls13
+  crypto.installed.dso_unload PROPERTIES TIMEOUT 90)
