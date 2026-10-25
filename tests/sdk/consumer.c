@@ -93,7 +93,7 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol)
     size_t sent_count = 0;
     int client_ready = 0, server_ready = 0, sent_done = 0;
     int client_closed = 0, server_closed = 0;
-    int step, rc = 1;
+    int step = 0, rc = 1;
     crypto_tls_result result;
 
     if (crypto_tls_session_create(provider,&client_options,&ci,&client) != CRYPTO_TLS_OK
