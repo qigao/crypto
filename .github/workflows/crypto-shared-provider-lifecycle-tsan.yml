@@ -8,6 +8,7 @@ on:
       - "src/**"
       - "include/crypto/**"
       - "tests/sdk/**"
+      - "tests/owner/**"
       - "tools/assemble_gmssl.cmake"
       - "providers/gmssl/hardening/**"
       - "providers/gmssl/patches/**"
@@ -102,6 +103,22 @@ jobs:
             -R '^crypto[.]installed[.](inflight_cancel_busy_destroy|host_lease_callback_race)$' \
             --no-tests=error --output-on-failure --timeout 120 \
             --repeat until-fail:3
+      - name: TSan SM3 and TLS common-owner C11 C++17 and 2 DSO modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags="-O1 -g -fno-omit-frame-pointer -fsanitize=thread"
+          cmake -S tests/owner -B build-owner-tsan -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            "-DCMAKE_C_FLAGS=$flags" \
+            "-DCMAKE_CXX_FLAGS=$flags" \
+            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread" \
+            "-DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=thread" \
+            "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/_installed-tsan"
+          cmake --build build-owner-tsan --parallel 2
+          test "$(ctest --test-dir build-owner-tsan -N | sed -n 's/^Total Tests: //p')" = 3
+          ctest --test-dir build-owner-tsan --no-tests=error \
+            --output-on-failure --timeout 120 --repeat until-fail:3
       - name: Preserve exact source, shared DSO and concurrent TSan proof
         if: always()
         uses: actions/upload-artifact@v4
@@ -112,4 +129,5 @@ jobs:
             build-gmssl-tsan/CMakeCache.txt
             build-provider-tsan/CMakeCache.txt
             build-sdk-tsan/Testing/Temporary/LastTest.log
+            build-owner-tsan/Testing/Temporary/LastTest.log
           if-no-files-found: warn
