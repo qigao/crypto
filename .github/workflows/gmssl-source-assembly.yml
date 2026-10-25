@@ -8,6 +8,7 @@ on:
       - "cmake/qualification/**"
       - ".github/workflows/gmssl-source-assembly.yml"
       - "providers/gmssl/patches/**"
+      - "providers/gmssl/hardening/**"
       - "providers/gmssl/tests/**"
       - "providers/gmssl/provenance/**"
   workflow_dispatch:
