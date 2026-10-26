@@ -1,6 +1,7 @@
 #include <crypto/provider.h>
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
+#include <crypto/tls_peer.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -21,6 +22,7 @@ int main(void) {
   CHECK(crypto_tls_abi_version() == CRYPTO_TLS_ABI_VERSION);
   CHECK(crypto_tls_extension_abi_version()
         == CRYPTO_TLS_EXTENSION_ABI_VERSION);
+  CHECK(crypto_tls_peer_abi_version() == CRYPTO_TLS_PEER_ABI_VERSION);
   CHECK(crypto_tls_provider_create(CRYPTO_TLS_ABI_VERSION, &provider)
         == CRYPTO_TLS_OK && provider != NULL);
   CHECK(crypto_tls_provider_destroy(&provider) == CRYPTO_TLS_OK
