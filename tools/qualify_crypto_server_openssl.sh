@@ -94,7 +94,7 @@ PY
     # The server might still be unwinding the failed handshake. Show only
     # bounded state/length diagnostics, never the output containing secrets.
     sleep 0.2
-    grep '^CRYPTO_TLS_PRIVATE_HANDSHAKE_DIAG ' "$server_log" >&2 || true
+    grep -E '^CRYPTO_TLS_PRIVATE_(HANDSHAKE_DIAG|CKE_DIAG|CKE_RECV|CKE_PARSED|CKE_DERIVE) ' "$server_log" >&2 || true
     grep '^Crypto test-only TLS server/exporter failed ' "$server_log" >&2 || true
     echo "Reverse OpenSSL TLS $proto peer did not qualify" >&2
     exit 1
@@ -104,7 +104,7 @@ PY
     server_pid=""
     # Print ONLY the approved private state/type/length diagnostic
     # without accidentally publishing a TLS transcript or export material.
-    grep '^CRYPTO_TLS_PRIVATE_HANDSHAKE_DIAG ' "$server_log" >&2 || true
+    grep -E '^CRYPTO_TLS_PRIVATE_(HANDSHAKE_DIAG|CKE_DIAG|CKE_RECV|CKE_PARSED|CKE_DERIVE) ' "$server_log" >&2 || true
     grep '^Crypto test-only TLS server/exporter failed ' "$server_log" >&2 || true
     echo "Crypto TLS $proto server failed authenticated TLS/HTTP" >&2
     exit 1
