@@ -120,6 +120,12 @@ jobs:
           bash tools/qualify_crypto_server_openssl.sh \
             "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" \
             "$RUNNER_TEMP/crypto-shared-peer" 9900
+          # OpenSSL3 default KeyShare (may be X25519) must interoperate via
+          # HelloRetryRequest to our explicitly supported P-256 group.
+          # This is mandatory, not an xfail or an alias for direct P-256.
+          CRYPTO_TLS_TEST_HRR_ONLY=1 bash tools/qualify_crypto_server_openssl.sh \
+            "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" \
+            "$RUNNER_TEMP/crypto-shared-peer" 9920
       - name: Upload independent test evidence without private keys
         if: always()
         uses: actions/upload-artifact@v4
