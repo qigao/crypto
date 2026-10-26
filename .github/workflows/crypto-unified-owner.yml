@@ -1,0 +1,173 @@
+name: Crypto unified SM3 TLS one physical GmSSL owner (qualification)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/crypto-unified-owner.yml"
+      - "CMakeLists.txt"
+      - "cmake/CryptoConfig.cmake.in"
+      - "cmake/CryptoTLSConfig.cmake.in"
+      - "cmake/crypto_tls.*"
+      - "src/**"
+      - "include/crypto/**"
+      - "tests/owner/**"
+      - "tools/audit_unified_crypto_owner.py"
+      - "providers/gmssl/hardening/**"
+      - "tools/assemble_gmssl.cmake"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  one-physical-owner:
+    name: "${{ matrix.os }} installed and relocated SM3 + TLS single image"
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - name: Crypto exact candidate
+        uses: actions/checkout@v4
+      - name: Original pinned GmSSL 3.2 source
+        uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Verify immutable source provenance and replay source safety overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          test "$(git -C _gmssl-upstream rev-parse HEAD)" = \
+            7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/one-owner-gmssl-source.json" \
+            -P tools/assemble_gmssl.cmake
+          test -s "$RUNNER_TEMP/one-owner-gmssl-source.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          v=json.loads((Path(os.environ["RUNNER_TEMP"])/"one-owner-gmssl-source.json").read_text())
+          assert v["git_patch_count"] == 1, v
+          assert v["source_adaptations"] == 39, v
+          assert v["crypto_hardening_edits"] == 5, v
+          print("Crypto source provenance: 40 historical source adaptations + 5 separate fixes")
+          PY
+      - name: Compile exactly one PIC private GmSSL implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+          else
+            generator=(-G Ninja)
+          fi
+          cmake -S _gmssl-upstream -B build-gmssl "${generator[@]}" \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
+            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
+            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl --config Release --target gmssl --parallel 2
+      - name: Build and install ONE shared SM3 TLS owner with two CMake views
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+            archive="$GITHUB_WORKSPACE/build-gmssl/bin/Release/gmssl.lib"
+          else
+            generator=(-G Ninja)
+            archive="$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
+          fi
+          test -s "$archive"
+          prefix="$RUNNER_TEMP/crypto-unified-sdk"
+          cmake -S . -B build-provider "${generator[@]}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DCRYPTO_GMSSL_STATIC=$archive"
+          cmake --build build-provider --config Release --parallel 2
+          cmake --install build-provider --config Release --prefix "$prefix"
+          test -s "$prefix/include/crypto/provider.h"
+          test -s "$prefix/include/crypto/tls.h"
+          test -s "$prefix/lib/cmake/Crypto/CryptoConfig.cmake"
+          test -s "$prefix/lib/cmake/CryptoTLS/CryptoTLSConfig.cmake"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            test -s "$prefix/bin/crypto_tls.dll"
+            test ! -e "$prefix/bin/crypto_provider-0.1.dll"
+          else
+            test ! -e "$prefix/lib/libcrypto_provider.so"
+            test ! -e "$prefix/lib/libcrypto_provider.dylib"
+          fi
+      - name: Run fully independent installed C11, C++17 and two MODULE owner tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$RUNNER_TEMP/crypto-unified-sdk"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+            export PATH="$(cygpath -u "$prefix")/bin:$PATH"
+          elif [[ "$RUNNER_OS" == macOS ]]; then
+            generator=(-G Ninja)
+            export DYLD_LIBRARY_PATH="$prefix/lib:${DYLD_LIBRARY_PATH:-}"
+          else
+            generator=(-G Ninja)
+            export LD_LIBRARY_PATH="$prefix/lib:${LD_LIBRARY_PATH:-}"
+          fi
+          cmake -S tests/owner -B build-owner "${generator[@]}" \
+            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$prefix"
+          cmake --build build-owner --config Release --parallel 2
+          test "$(ctest --test-dir build-owner -C Release -N | sed -n 's/^Total Tests: //p')" = 3
+          ctest --test-dir build-owner -C Release \
+            --no-tests=error --output-on-failure --timeout 90
+          python3 tools/audit_unified_crypto_owner.py \
+            --prefix "$prefix" --build-dir build-owner \
+            --report build-owner/one-owner.json
+      - name: Physically relocate the SDK and revalidate both package imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$RUNNER_TEMP/crypto-unified-sdk"
+          moved="$RUNNER_TEMP/crypto-unified-sdk-relocated"
+          test -d "$prefix" && test ! -e "$moved"
+          mv "$prefix" "$moved"
+          test ! -e "$prefix"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+            export PATH="$(cygpath -u "$moved")/bin:$PATH"
+          elif [[ "$RUNNER_OS" == macOS ]]; then
+            generator=(-G Ninja)
+            export DYLD_LIBRARY_PATH="$moved/lib:${DYLD_LIBRARY_PATH:-}"
+          else
+            generator=(-G Ninja)
+            export LD_LIBRARY_PATH="$moved/lib:${LD_LIBRARY_PATH:-}"
+          fi
+          cmake -S tests/owner -B build-owner-relocated "${generator[@]}" \
+            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$moved"
+          cmake --build build-owner-relocated --config Release --parallel 2
+          test "$(ctest --test-dir build-owner-relocated -C Release -N | sed -n 's/^Total Tests: //p')" = 3
+          ctest --test-dir build-owner-relocated -C Release \
+            --no-tests=error --output-on-failure --timeout 90
+          python3 tools/audit_unified_crypto_owner.py \
+            --prefix "$moved" --build-dir build-owner-relocated \
+            --report build-owner-relocated/one-owner-relocated.json
+      - name: Publish two-phase binary-owner and source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-one-physical-owner-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/one-owner-gmssl-source.json
+            build-owner/one-owner.json
+            build-owner-relocated/one-owner-relocated.json
+            build-owner/Testing/Temporary/LastTest.log
+            build-owner-relocated/Testing/Temporary/LastTest.log
+            build-provider/CMakeCache.txt
+          if-no-files-found: warn
