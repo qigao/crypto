@@ -22,11 +22,15 @@ The reference server uses the real OpenSSL 3
 The Crypto client uses `crypto_tls_session_export_v1_2()` after its
 real authenticated handshake. They use exactly the **same TCP/TLS
 connection** (one server accepts one client), the same label
-`EXPORTER-Channel-Binding`, output length 32 and *no exporter
-context* (use_context=0). This is the unambiguous OpenSSL CLI/API
-default. The context-present-but-empty RFC 9266 CNet setting
-(use_context=1) remains separately tested with two real native GmSSL
-peers; do not silently conflate the TLS 1.2 semantics.
+`EXPORTER-Channel-Binding` and 32-byte output. Both implementations
+independently derive TWO context forms **from the same TLS session**:
+an omitted context (`use_context=0`) and the CNet RFC 9266
+explicitly-present empty context (`use_context=1, context_len=0`).
+OpenSSL 3 `SSL_export_keying_material()` provides the independent
+oracle for BOTH forms; the Crypto facade provides them through
+`crypto_tls_session_export_v1_2()`. TLS 1.2 must produce distinct
+values for these two forms, while TLS 1.3 produces equal values in
+accordance with RFC 8446. Never conflate the TLS 1.2 semantics.
 
 The test server advertises the existing RSA/ECDHE GCM TLS 1.2 or
 RSA-PSS/AES-GCM TLS 1.3 profile and selects `h2` from the client ALPN
@@ -34,8 +38,8 @@ offered list, then replies to an actual HTTP request.
 Both producer processes independently write their 32 derived bytes
 as exactly 64 uppercase hex characters into private, exclusive
 0600 `.secret` files, **only after valid TLS authentication**.
-The script requires a strict **byte-for-byte** match and a completed
-TLS/HTTP exchange for BOTH protocols. Never print, export,
+The script requires strict **byte-for-byte** matches for BOTH
+context forms and a completed TLS/HTTP exchange for BOTH protocols. Never print, export,
 artifact-upload, reuse or snapshot raw exporter material.
 Every failure exits nonzero; no skip, xfail, suppression or retry-to-pass.
 
@@ -49,9 +53,10 @@ certificate verification and local exporter availability at the
 client do not establish that the server authenticated/finished.
 
 This reverse-direction incompatibility is **not considered fixed**
-by the reference test above. Its experimental test source remains
-available, with a separate issue tracking a real provider/server-side
-repair and standalone fail-closed qualification. It cannot be used
+by the reference test above. The experimental test source remains
+available and is explicitly tracked in [Crypto #23](https://github.com/qigao/crypto/issues/23)
+for a real provider/server-side fix and independent fail-closed
+qualification. It cannot be used
 as evidence for production CNet server parity.
 
 ## CI / release boundary
