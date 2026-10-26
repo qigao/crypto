@@ -34,6 +34,47 @@ class GmSSLImportTest(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual(verifier.classify(source)[1], target)
 
+    def test_authoritative_source_overlay_layout(self):
+        examples = {
+            "aes_key_wrap.c": "providers/gmssl/src/aes_key_wrap.c",
+            "aes_key_wrap.h": "providers/gmssl/include/gmssl/aes_key_wrap.h",
+            "backports/secp384r1_verify.c":
+                "providers/gmssl/src/secp384r1_verify.c",
+            "backports/secp384r1_verify.h":
+                "providers/gmssl/include/gmssl/secp384r1_verify.h",
+            "tls13-handshake-reader.h":
+                "providers/gmssl/include/gmssl/tls13-handshake-reader.h",
+        }
+        for name, expected in examples.items():
+            group, historical = verifier.classify(name)
+            self.assertEqual(group, "provider-source-backport")
+            self.assertEqual(
+                verifier.active_source_path(name, group, historical), expected)
+            self.assertFalse((verifier.ROOT / historical).exists())
+            self.assertTrue((verifier.ROOT / expected).is_file())
+
+    def test_patch_directory_contains_no_implementation(self):
+        root = verifier.ROOT / verifier.ORIGIN / "patches"
+        sources = sorted(str(f) for f in root.rglob("*")
+                         if f.is_file() and f.suffix in (".c", ".h"))
+        self.assertEqual(sources, [], sources)
+
+    def test_historical_readme_relocation_preserves_original_archive(self):
+        historical = verifier.ROOT / verifier.HISTORICAL_README
+        current = verifier.ROOT / verifier.README
+        self.assertTrue(historical.is_file())
+        self.assertTrue(current.is_file())
+        self.assertNotEqual(historical.read_bytes(), current.read_bytes())
+        source_bytes = verifier.git_content(verifier.HISTORICAL_README)
+        self.assertEqual(
+            verifier.git_blob_sha(source_bytes),
+            verifier.EXPECTED_BLOBS[verifier.HISTORICAL_README])
+        _, payload = verifier.verify()
+        # Original handoff tar keeps the original logical README pathname,
+        # not a second physical copy under the active providers/gmssl/ tree.
+        self.assertEqual(payload[verifier.README], source_bytes)
+        self.assertNotIn(verifier.HISTORICAL_README, payload)
+
     def test_traversal_noncanonical_and_unclassified_files_rejected(self):
         for path in (
             "../bad", "tests/../../bad", "/absolute", "tests//twice.c",

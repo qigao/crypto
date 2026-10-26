@@ -1,96 +1,60 @@
-# GmSSL 3.2.0#13 → standalone Crypto provider: source handoff
+# GmSSL source ownership in qigao/crypto
 
-This directory stages a **byte-for-byte, source-identical migration kit**.
-It does **not** move the port, create a new GitHub repository, modify the
-installed GmSSL package, switch production CNet, or authorize a release.
+This is the **current** GmSSL integration contract. Crypto owns the patched
+GmSSL 3.2 source extensions and publishes exactly **one**
+`Salts::Crypto` static archive (via `find_package(Crypto 0.1 CONFIG REQUIRED)`).
+The pinned upstream GmSSL archive is a private *build input*, never a second
+installed package, shared Provider, exported CMake target or runtime fallback.
 
-## Frozen source identity
+## Active source layout
 
-- vcpkg registry repository/commit: `qigao/vcpkg-cache@2e214ae44a3e3244eded5db6361194576356fc9e`
-- vcpkg port tree: `8e8fda20b723803adc53613f6f608736238ac97d`
-- port: `gmssl 3.2.0#13` (versions/g-/gmssl.json and baseline.json unchanged)
-- GmSSL upstream source: `guanzhi/GmSSL@7c9f02904ef33e59c87b4f16621cc8fd434e7579`
-- upstream GmSSL license: Apache-2.0, copied verbatim from the pinned source
+| Path | Purpose |
+| --- | --- |
+| `src/*.c` | 6 actual imported C source/backport implementations |
+| `include/gmssl/*.h` | 7 imported GmSSL private/build overlay headers |
+| `patches/*.cmake` and `patches/*.patch` | 40 immutable historical source adaptations, **no C implementations or headers** |
+| `hardening/` | Post-import reviewed Crypto-only source hardening |
+| `diagnostics/` | Opt-in qualification instrumentation |
+| `tests/` | Original GmSSL C11/TLS/X.509 conformance tests and fixture files |
+| `provenance/` | Historical, immutable source identification and import evidence |
 
-The machine inventory is `ownership-manifest.json`. It lists **all 95
-tracked files** with original Git blob IDs, proposed destination and
-per-file ownership group. Exactly **3** packaging/registry files stay in
-vcpkg-cache; **40** source patch scripts, **13** source/header/backport
-files and **39** conformance/fixture files transfer to Crypto. The two
-source patch classes contain the original GmSSL TLS/X.509/ASN.1, RSA,
-AES key wrap, P-384, Provider External-I/O, fatal alert and ABI
-adaptations. Weak MD5/DES compatibility additions are included for
-historical parity but must not be enabled as new Crypto public defaults.
+`tools/verify_gmssl_import.py` checks the original **92 source/test/patch
+Git blobs** against `provenance/ownership-manifest.json` and `patch-order.json`.
+The original 95-entry deterministic handoff archive retains its original
+entry names and SHA-256 even though the live source files have moved.
 
-## Reproducible export without GitHub tokens or patch application
+The historical handoff README is preserved **byte-for-byte**, at
+`provenance/HISTORICAL-HANDOFF.md`. Its statements about this repository not
+existing were true only at the time of the original handoff; they are not
+the current project status. The immutable historical manifest is likewise an
+origin record, *not* a current path inventory.
 
-On the exact source branch (or its PR merge ref):
+## Build/consume
 
-```bash
-python3 tools/verify_gmssl_crypto_handoff.py
-python3 tools/verify_gmssl_crypto_handoff.py \
-  --export gmssl-provider-handoff.tar.gz \
-  --report gmssl-provider-handoff.json
-tar -tzf gmssl-provider-handoff.tar.gz
-```
+1. Check out the exact pinned upstream
+   `guanzhi/GmSSL@7c9f02904ef33e59c87b4f16621cc8fd434e7579`.
+2. Run `python3 tools/verify_gmssl_import.py`; apply original immutable
+   adaptations via `cmake -DGMSSL_UPSTREAM_SOURCE=<checkout> -P tools/assemble_gmssl.cmake`.
+   Source assembly reconstructs the historical `CMAKE_CURRENT_LIST_DIR`
+   sibling layout in a temporary staging directory and cleans it afterward.
+   No active duplicate of the 13 backport sources lives in `patches/`.
+3. Build upstream `gmssl` as a **private static PIC input**, then build
+   and install Crypto using `CRYPTO_GMSSL_SOURCE` and `CRYPTO_GMSSL_STATIC`.
+   Consumers find/link only `Salts::Crypto`.
 
-The exporter verifies all 95 *Git blob identities*, upstream source
-commit, port static-provider contract, all 40 source patch entries,
-`versions/baseline.json`, the registry port version/tree and the
-original Apache-2.0 license. It is network-free and exports bytes from
-`git cat-file`, **not from a mutable working tree**. The resulting
-deterministic tarball contains **92 provider source/patch/test files**
-plus a provenance manifest, handoff README and license (95 entries).
-The 3 vcpkg packaging files are intentionally excluded. CI produces
-two archives and asserts identical SHA-256 before uploading the
-content-addressed handoff artifact.
+Installed consumers of SM3 can include `<gmssl/sm3.h>` and call the real
+`sm3_init`, `sm3_update` and `sm3_finish` from that archive. There is
+**no** `<crypto/provider.h>`, `Crypto::` alias or SM3 forwarding trampoline.
+Other GmSSL implementation headers are *not* automatically published; expand
+the installed header set only with an ABI/Installed SDK qualification.
 
-Target layout **once the standalone `qigao/crypto` repository exists**:
+## Status and independent work
 
-```text
-providers/gmssl/patches/       40 source patches + 13 source/backports
-providers/gmssl/tests/         39 original C11/TLS/X.509/interop tests
-providers/gmssl/LICENSE
-providers/gmssl/README.md
-providers/gmssl/provenance/ownership-manifest.json
-```
+The static Crypto SDK, original source and runtime TLS tests were qualified on
+the exact HEAD of [Crypto PR #32](https://github.com/qigao/crypto/pull/32).
+That Draft is stacked on [#30](https://github.com/qigao/crypto/pull/30).
+Opt-in CCS/HRR candidate work is isolated in [#28](https://github.com/qigao/crypto/pull/28);
+do not silently integrate candidate or change TLS behavior.
 
-**Important:** this is an exact **input kit** for the independent
-Crypto/GmSSL fork/provider, not an already patched/buildable GmSSL
-source checkout. The original `vcpkg_replace_string` scripts use
-`SOURCE_PATH` and their own `CMAKE_CURRENT_LIST_DIR`; their
-relative sibling layout is preserved inside `patches/`, but Crypto
-must assemble/review them against the pinned upstream source and
-run the original suite before claiming a provider release.
-
-## Strict ownership and release gates
-
-**Crypto owns:** a reviewed, pinned GmSSL fork or prepared source tree,
-cryptographic primitive extensions, TLS 1.2/1.3/X.509/External-I/O and
-Provider ABI/lifetime contracts. The public Crypto API must use opaque
-provider contexts and bounded C11 ownership. CNet consumes Crypto and
-must never statically embed a second GmSSL binary owner.
-
-**vcpkg-cache retains:** `ports/gmssl/portfile.cmake`, `vcpkg.json`,
-`GmSSLConfig.cmake`, registry versions/baseline, package-install
-smokes and binary cache. The current **3.2.0#13** port/tree must remain
-intact throughout this handoff. Only after Crypto independently
-qualifies all original code/tests on Linux, macOS, Windows and
-Sanitizers may vcpkg-cache replace its dozens of source-adaptation
-patches with a fixed, reviewed Crypto/GmSSL source commit; that
-change requires a **new port-version** and updated registry git-tree.
-
-No OpenSSL fallback, no silent TLS capability loss, no dual owner,
-no release without independent CA/SAN/TLS/P-384 interoperability
-results. See [vcpkg-cache issue #207](https://github.com/qigao/vcpkg-cache/issues/207),
-[SaltsCore owner issue #20](https://github.com/qigao/salts-core/issues/20)
-and [Salts migration #1287](https://github.com/qigao/salts/issues/1287).
-
-## Blocking external action
-
-A standalone `qigao/crypto` repository does not yet exist in the
-connected account's repository list. The GitHub integration here
-cannot create a repository. It must first be created on GitHub
-before this verified tarball can be imported or turned into a
-Crypto-side PR. Until then, this PR is staging only; retain the
-current vcpkg registry and production CNet pins unchanged.
+This source/layout cleanup does **not** publish a new Crypto SDK, retire the
+vcpkg-cache `gmssl 3.2.0#13` port, or switch production CNet.

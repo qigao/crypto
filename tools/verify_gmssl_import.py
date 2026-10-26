@@ -22,14 +22,15 @@ ORIGIN = "providers/gmssl"
 MANIFEST = f"{ORIGIN}/provenance/ownership-manifest.json"
 ORDER = f"{ORIGIN}/provenance/patch-order.json"
 LICENSE = f"{ORIGIN}/LICENSE"
-README = f"{ORIGIN}/README.md"
+README = f"{ORIGIN}/README.md"  # logical path in original historical tar
+HISTORICAL_README = f"{ORIGIN}/provenance/HISTORICAL-HANDOFF.md"
 EXPECTED_ARCHIVE_SHA256 = (
     "586bbee98e7a6ba83ab13549d369d01fc341788ab3c53be5372d2bc063da4601"
 )
 EXPECTED_BLOBS = {
     MANIFEST: "55c282332aaddf3b555ba10dba7100ec839fe51a",
     LICENSE: "d9a10c0d8e868ebf8da0b3dc95bb0be634c34bfe",
-    README: "77c49542ebfc1b5713eeacf016f778ad0460b673",
+    HISTORICAL_README: "77c49542ebfc1b5713eeacf016f778ad0460b673",
 }
 
 
@@ -67,10 +68,28 @@ def classify(path: str) -> tuple[str, str]:
     raise ValueError(f"unclassified source in frozen vcpkg port: {path}")
 
 
+def active_source_path(path: str, group: str, original_target: str) -> str:
+    """Map immutable vcpkg source blobs to Crypto's authoritative src/include.
+
+    The 2026-10-26 handoff manifest and tar paths are a historical attestation,
+    not aliases in the live repository. Files stay byte-identical; no parallel
+    implementation or working-tree copy under patches/ is accepted.
+    """
+    if group != "provider-source-backport":
+        return original_target
+    filename = PurePosixPath(path).name
+    if path.endswith(".c"):
+        return f"{ORIGIN}/src/{filename}"
+    if path.endswith(".h"):
+        return f"{ORIGIN}/include/gmssl/{filename}"
+    raise ValueError(f"not a C source/header backport: {path}")
+
+
 def tree_blobs() -> dict[str, str]:
     raw = git(
         "ls-tree", "-r", "-z", "HEAD", "--",
         f"{ORIGIN}/patches", f"{ORIGIN}/tests",
+        f"{ORIGIN}/src", f"{ORIGIN}/include",
     )
     entries: dict[str, str] = {}
     for record in raw.split(b"\0"):
@@ -128,14 +147,17 @@ def verify() -> tuple[dict, dict[str, bytes]]:
             if target in trees:
                 raise ValueError(f"vcpkg packaging unexpectedly imported: {target}")
             continue
-        if target in expected_paths:
-            raise ValueError(f"duplicate source import mapping: {target}")
-        expected_paths.add(target)
-        if trees.get(target) != row["git_blob_sha"]:
-            raise ValueError(f"Git source blob identity drift: {target}")
-        content = git_content(target)
+        physical_path = active_source_path(path, group, target)
+        if physical_path in expected_paths:
+            raise ValueError(f"duplicate Crypto source path: {physical_path}")
+        expected_paths.add(physical_path)
+        if trees.get(physical_path) != row["git_blob_sha"]:
+            raise ValueError(f"Git source blob identity drift: {physical_path}")
+        content = git_content(physical_path)
         if git_blob_sha(content) != row["git_blob_sha"]:
-            raise ValueError(f"source content changed: {target}")
+            raise ValueError(f"source content changed: {physical_path}")
+        # Restore ORIGINAL logical tar entry, not an on-disk duplicate.
+        # Historical 95-entry handoff archive digest remains byte-for-byte.
         payload[target] = content
     if set(trees) != expected_paths:
         extra = sorted(set(trees) - expected_paths)
@@ -170,12 +192,16 @@ def verify() -> tuple[dict, dict[str, bytes]]:
     ):
         raise ValueError("GmSSL source patch ordering or coverage differs from port")
     payload[LICENSE] = git_content(LICENSE)
-    payload[README] = git_content(README)
+    # Keep the original 95-entry artifact byte-identical: its historical
+    # README *archive name* differs from the current checked-in physical path.
+    # No historical content is modified and no redundant repository copy exists.
+    payload[README] = git_content(HISTORICAL_README)
     payload[MANIFEST] = git_content(MANIFEST)
     if len(payload) != 95:
         raise ValueError("expected 92 provider payloads and 3 metadata files")
     print(
-        f"PASS: {len(trees)} identical provider source/test Git blobs, "
+        f"PASS: {len(trees)} original provider Git blobs in active src/include/patches/tests, "
+        "13 source backports relocated, old handoff tar preserved; "
         "vcpkg port 3.2.0#13 unchanged, 40 ordered patches, Apache-2.0 license"
     )
     return manifest, payload

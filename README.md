@@ -29,7 +29,7 @@ The build merges those input objects into libsalts_crypto.a (or salts_crypto.lib
 on Windows); the staging GmSSL archive is not installed or exported.
 
 The installed CryptoTargets.cmake exports only Salts::Crypto.
-The only public header namespace is `include/crypto/`. SHA256 and Ed448
+The Crypto facade headers are under `include/crypto/`. SHA256 and Ed448
 are declared in `crypto/sha256.h` and `crypto/ed448.h`, both using
 `crypto/status.h`. `include/salts/crypto.h` is deleted, without a forwarding
 header, duplicate implementation, or target alias. Existing algorithm C ABI
@@ -39,6 +39,42 @@ libecc's dual-license notice is preserved with the SDK; its headers remain priva
 source list and its configuration, but never installs or exports a separate
 libecc archive, target or package. The objects are embedded directly in
 `Salts::Crypto` before the pinned GmSSL archive is merged.
+
+The removed `crypto/provider.h` was only a versioned SM3 trampoline.
+There is no generic Crypto Provider ABI or SM3 wrapper now. Downstream code
+needing SM3 includes the installed pinned `gmssl/sm3.h` and calls the
+GmSSL `sm3_*` functions in the same `Salts::Crypto` static archive.
+The facade's TLS session ownership API remains independent of that deleted
+SM3 ABI. Only the explicitly published GmSSL headers are supported by this
+installed SDK; other GmSSL internal headers remain private.
+
+## Source layout and provenance
+
+`providers/gmssl/src/` and `providers/gmssl/include/gmssl/` contain the
+13 canonical GmSSL extension source/header blobs. `providers/gmssl/patches/`
+contains **only** the immutable 40 historical patch scripts, not C/header
+implementations. Historical patch scripts apply through a temporary source
+assembly directory; original source identity and the 95-entry handoff archive
+digest are checked independently.
+
+See [the current GmSSL source README](providers/gmssl/README.md) and
+[import status](providers/gmssl/provenance/IMPORT-STATUS.md).
+`providers/gmssl/provenance/HISTORICAL-HANDOFF.md` is the byte-identical
+original README; its old repository-creation instructions are historical,
+not current build instructions. The provenance manifest is likewise immutable.
+
+## Consumer example
+
+```c
+#include <crypto/sha256.h>
+#include <crypto/ed448.h>
+#include <gmssl/sm3.h>
+```
+
+Link only `Salts::Crypto`. Only `gmssl/sm3.h` is installed as a direct
+GmSSL API surface in the current SDK; other internal GmSSL headers are not
+a supported consumer contract without separate acceptance. Neither the
+generic `crypto/provider.h` nor `salts/crypto.h` exists.
 
 ## Required exact-head acceptance
 

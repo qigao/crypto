@@ -1,6 +1,6 @@
 #include <crypto/sha256.h>
 #include <crypto/ed448.h>
-#include <crypto/provider.h>
+#include <gmssl/sm3.h>
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
 #include <crypto/tls_peer.h>
@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #define CHECK(cond) do { if (!(cond)) { \
-  fprintf(stderr,"C11 provider line %d: %s\n", __LINE__, #cond); \
+  fprintf(stderr,"C11 crypto line %d: %s\n", __LINE__, #cond); \
   return __LINE__; } } while (0)
 int main(void) {
   static const uint8_t expected[32] = {
@@ -18,9 +18,8 @@ int main(void) {
     0x29,0x7d,0xa0,0x2b,0x8f,0x4b,0xa8,0xe0
   };
   uint8_t digest[32];
-  size_t i;
+  SM3_CTX sm3;
   crypto_tls_provider *provider = NULL;
-  crypto_provider_abi_0_1_required();
   CHECK(crypto_tls_abi_version() == CRYPTO_TLS_ABI_VERSION);
   CHECK(crypto_tls_extension_abi_version()
         == CRYPTO_TLS_EXTENSION_ABI_VERSION);
@@ -29,9 +28,9 @@ int main(void) {
         == CRYPTO_TLS_OK && provider != NULL);
   CHECK(crypto_tls_provider_destroy(&provider) == CRYPTO_TLS_OK
         && provider == NULL);
-  CHECK(crypto_provider_runtime_abi() == CRYPTO_PROVIDER_ABI_VERSION);
-  CHECK(crypto_provider_sm3((const uint8_t*)"abc",3,digest,sizeof(digest))
-        == CRYPTO_PROVIDER_OK);
+  sm3_init(&sm3);
+  sm3_update(&sm3, (const uint8_t*)"abc", 3u);
+  sm3_finish(&sm3, digest);
   if (memcmp(digest, expected, sizeof(expected)) != 0) {
     size_t j;
     fprintf(stderr, "SM3(abc) observed=");
@@ -41,16 +40,6 @@ int main(void) {
     fprintf(stderr, "\\n");
     return __LINE__;
   }
-  memset(digest, 0x5a, sizeof(digest));
-  CHECK(crypto_provider_sm3(NULL,1,digest,sizeof(digest))
-        == CRYPTO_PROVIDER_INVALID_ARGUMENT);
-  CHECK(crypto_provider_sm3((const uint8_t*)"abc",3,digest,31u)
-        == CRYPTO_PROVIDER_INVALID_ARGUMENT);
-  CHECK(crypto_provider_sm3((const uint8_t*)"abc",3,NULL,32u)
-        == CRYPTO_PROVIDER_INVALID_ARGUMENT);
-  for (i=0;i<sizeof(digest);++i) CHECK(digest[i]==0x5au);
-  CHECK(crypto_provider_sm3(NULL,0,digest,sizeof(digest))
-        == CRYPTO_PROVIDER_OK);
   /* Independently link canonical SHA256/Ed448 APIs from the installed SDK. */
   {
     static const uint8_t seed[SALTS_CRYPTO_ED448_PRIVATE_KEY_SIZE] = {
