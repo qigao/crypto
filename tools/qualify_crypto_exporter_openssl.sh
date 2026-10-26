@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
-# Independent OpenSSL3 exporter byte oracle for the *installed* Crypto TLS
-# server image. Test-only secret material stays inside private unuploaded files.
+# Independent exporter BYTE oracle on one real TLS session.
+# Crypto is the already-qualified installed C11 TLS CLIENT.
+# A separate TEST-ONLY server links OpenSSL 3 and uses the native
+# SSL_export_keying_material() API. Production Crypto links NO OpenSSL.
 set -euo pipefail
 
-sdk_server="${1:?installed C11 server executable required}"
-work="${2:?existing independent OpenSSL fixture workdir required}"
-base_port="${3:-9830}"
+crypto_client="${1:?installed Crypto C11 client required}"
+openssl_oracle_server="${2:?test-only OpenSSL3 reference server required}"
+work="${3:?fixture scratch directory required}"
+base_port="${4:-9830}"
 
-test -x "$sdk_server"
+test -x "$crypto_client"
+test -x "$openssl_oracle_server"
 test -s "$work/ca.pem"
 test -s "$work/leaf.pem"
 test -s "$work/leaf-key.pem"
+test -s "$work/leaf.der"
 openssl version | grep -q '^OpenSSL 3[.]'
+leaf_sha256="$(openssl dgst -sha256 -r "$work/leaf.der" | awk '{print $1}')"
+[[ "$leaf_sha256" =~ ^[0-9a-f]{64}$ ]]
 
 server_pid=""
 cleanup() {
@@ -20,10 +27,11 @@ cleanup() {
     wait "$server_pid" 2>/dev/null || true
     server_pid=""
   fi
-  # Deliberately not part of public CI artifacts: includes actual ephemeral
-  # TLS-exported bytes. No test logger may print the values on success/fail.
-  rm -f "$work"/native-exporter-*.secret "$work"/openssl-exporter-*.secret \
-        "$work"/native-exporter-*.private
+  # Never upload session-derived keying material or any raw TLS transcript.
+  rm -f "$work"/native-exporter-*.secret \
+        "$work"/openssl-exporter-*.secret \
+        "$work"/native-exporter-*.private \
+        "$work"/openssl-exporter-*.private
 }
 trap cleanup EXIT
 
@@ -31,132 +39,52 @@ for protocol in 12 13; do
   port="$((base_port + protocol - 12))"
   native_secret="$work/native-exporter-$protocol.secret"
   openssl_secret="$work/openssl-exporter-$protocol.secret"
-  "$sdk_server" "$protocol" "$port" "$work/leaf.pem" "$work/leaf-key.pem" \
-    "$native_secret" >"$work/native-exporter-$protocol.private" 2>&1 &
+
+  "$openssl_oracle_server" "$protocol" "$port" \
+    "$work/leaf.pem" "$work/leaf-key.pem" "$openssl_secret" \
+    >"$work/openssl-exporter-$protocol.private" 2>&1 &
   server_pid=$!
   sleep 1
   if ! kill -0 "$server_pid" 2>/dev/null; then
-    echo "Independent native Crypto $protocol TLS server failed early" >&2
+    echo "Independent OpenSSL3 exporter oracle could not start" >&2
     exit 1
   fi
 
-  # Python gives a cross-platform bounded subprocess timeout; macOS doesn't
-  # guarantee GNU timeout. The OpenSSL *client* owns the peer exporter
-  # implementation and writes its diagnostic key material ONLY to .secret.
-  python3 - "$openssl_secret" "$protocol" "$port" "$work/ca.pem" <<'PY'
-import os
-from pathlib import Path
-import signal
-import subprocess
-import sys
+  # This Crypto CLIENT already passes strict OpenSSL CA/SAN, ALPN h2,
+  # bounded socket I/O, DER identity and authenticated HTTP tests.
+  # Optional final argument writes ONLY the no-context TLS exporter bytes.
+  if ! "$crypto_client" "$protocol" "$port" "$work/ca.pem" \
+      localhost good "$leaf_sha256" "$work/leaf.der" "$native_secret" \
+      >"$work/native-exporter-$protocol.private" 2>&1; then
+    echo "Crypto C11 client failed independent OpenSSL3 exporter TLS/HTTP test" >&2
+    exit 1
+  fi
 
-secret_path, protocol, port, ca = sys.argv[1:]
-command = [
-    "openssl", "s_client",
-    "-connect", "127.0.0.1:" + port,
-    "-servername", "localhost",
-    "-verify_return_error", "-verify_hostname", "localhost",
-    "-CAfile", ca,
-    "-ign_eof", "-ignore_unexpected_eof",
-    "-keymatexport", "EXPORTER-Channel-Binding",
-    "-keymatexportlen", "32",
-]
-if protocol == "12":
-    command += [
-        "-tls1_2", "-cipher", "ECDHE-RSA-AES128-GCM-SHA256",
-        "-sigalgs", "rsa_pkcs1_sha256"
-    ]
-else:
-    command += [
-        "-tls1_3", "-ciphersuites", "TLS_AES_128_GCM_SHA256",
-        "-sigalgs", "rsa_pss_rsae_sha256"
-    ]
-with Path(secret_path).open("wb") as output:
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=output,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-    try:
-        process.communicate(
-            input=b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n",
-            timeout=25,
-        )
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        process.communicate()
-        print("OpenSSL exporter peer exceeded 25 second timeout",
-              file=sys.stderr)
-        raise SystemExit(1)
-    if process.returncode != 0:
-        # Report only categorical diagnostics. NEVER expose the OpenSSL
-        # exporter material (or any session key/log bytes) to public CI logs.
-        evidence = Path(secret_path).read_text(errors="replace").lower()
-        markers = {
-            "handshake_alert": "alert handshake" in evidence,
-            "certificate_alert": "alert certificate" in evidence,
-            "no_shared_cipher": "no shared cipher" in evidence,
-            "signature_failure": "signature" in evidence and "failed" in evidence,
-            "verification_ok": "verify return code: 0" in evidence
-                or "verification: ok" in evidence,
-            "http_received": "http/1.0 200 ok" in evidence,
-            "exporter_available": "keying material:" in evidence,
-            "unexpected_eof": "unexpected eof" in evidence,
-        }
-        server_log = Path(ca).parent / ("native-exporter-" + protocol + ".private")
-        server_status = "none"
-        source_locations = []
-        if server_log.is_file():
-            import re
-            for line in server_log.read_text(errors="replace").splitlines():
-                if line.startswith("Crypto test-only TLS server/exporter failed"):
-                    server_status = line
-                # Only a filename+line number, not the underlying GmSSL
-                # transcript, certificate details, or exported key bytes.
-                for filename, linenum in re.findall(
-                    r"([A-Za-z0-9_-]*tls[0-9]*[.]c):(\d+)", line
-                ):
-                    source_locations.append(filename + ":" + linenum)
-        source_locations = source_locations[-12:]
-        print(
-            "OpenSSL independent exporter peer failed (returncode={}; "
-            "classification={}; native={}; source_lines={})".format(
-                process.returncode, markers, server_status, source_locations
-            ),
-            file=sys.stderr
-        )
-        raise SystemExit(1)
-PY
-
+  # The reference must also finish its own TLS/HTTP flow successfully.
   if ! wait "$server_pid"; then
     server_pid=""
-    echo "Crypto TLS $protocol exporter server did not settle" >&2
+    echo "Independent OpenSSL3 server failed a real TLS/HTTP session" >&2
     exit 1
   fi
   server_pid=""
   test -s "$native_secret"
   test -s "$openssl_secret"
 
-  # Compare the two *independently derived* exporter byte strings from
-  # EXACTLY ONE real session; do not print or upload either secret.
+  # Strict binary-equivalent 32-byte keying-material comparison; NEVER
+  # log, publish, or attach either value. Both are from the SAME session.
   native_hex="$(tr -d '\r\n' < "$native_secret")"
-  openssl_hex="$(awk '$1=="Keying" && $2=="material:" {print $3}' \
-    "$openssl_secret" | tr -d '\r\n')"
+  openssl_hex="$(tr -d '\r\n' < "$openssl_secret")"
   if [[ ! "$native_hex" =~ ^[0-9A-F]{64}$ ]] ||
      [[ ! "$openssl_hex" =~ ^[0-9A-F]{64}$ ]] ||
      [[ "$native_hex" != "$openssl_hex" ]]; then
-    echo "TLS $protocol real Crypto/OpenSSL exporter bytes disagree or are missing" >&2
+    echo "Independent OpenSSL3 and Crypto exporter bytes disagree or are missing (TLS $protocol)" >&2
     exit 1
   fi
-  if ! grep -q 'HTTP/1.0 200 OK' "$openssl_secret"; then
-    echo "TLS $protocol OpenSSL client did not receive native Crypto HTTP response" >&2
-    exit 1
-  fi
+  unset native_hex openssl_hex
   rm -f "$native_secret" "$openssl_secret" \
-    "$work/native-exporter-$protocol.private"
-  echo "Independent OpenSSL 3 TLS $protocol exporter SAME-SESSION bytes and HTTP: PASS"
+    "$work/native-exporter-$protocol.private" \
+    "$work/openssl-exporter-$protocol.private"
+  echo "Crypto client vs independent OpenSSL3 server: TLS $protocol SAME-SESSION exporter bytes and HTTP PASS"
 done
 
-echo "Crypto v1.2 TLS exporter independent OpenSSL 3 oracle: PASS"
+echo "Independent OpenSSL 3 RFC 5705/8446 exporter byte parity: PASS"
