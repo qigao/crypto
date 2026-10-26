@@ -31,6 +31,10 @@ on Windows); the staging GmSSL archive is not installed or exported.
 The installed CryptoTargets.cmake exports only Salts::Crypto.
 The public headers are include/crypto and include/salts/crypto.h.
 libecc's dual-license notice is preserved with the SDK; its headers remain private.
+`vendor/libecc/CMakeLists.txt` owns the explicit Ed448-only internal OBJECT
+source list and its configuration, but never installs or exports a separate
+libecc archive, target or package. The objects are embedded directly in
+`Salts::Crypto` before the pinned GmSSL archive is merged.
 
 ## Required exact-head acceptance
 
