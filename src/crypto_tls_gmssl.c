@@ -2,6 +2,7 @@
  * Private GmSSL 3.2 adapter; never included in the installed SDK.
  */
 #include <crypto/tls.h>
+#include <crypto/tls_ext.h>
 #include <gmssl/tls.h>
 
 #include <limits.h>
@@ -20,6 +21,12 @@ struct crypto_tls_session {
     atomic_bool cancelled;
     int context_initialized;
     int connection_initialized;
+    int handshake_started;
+    int alpn_configured;
+    size_t alpn_count;
+    char alpn_storage[CRYPTO_TLS_ALPN_MAX_PROTOCOLS][
+        CRYPTO_TLS_ALPN_MAX_NAME_BYTES + 1u];
+    char *alpn_names[CRYPTO_TLS_ALPN_MAX_PROTOCOLS];
     crypto_tls_io transport;
     TLS_CTX context;
     TLS_CONNECT connection;
@@ -234,6 +241,10 @@ crypto_tls_result crypto_tls_session_handshake(crypto_tls_session *s)
     } else {
         status = completed_handshake(&s->connection);
         if (status == CRYPTO_TLS_AGAIN) {
+            /* Admission is serialized by in_use; reject ALPN mutation after
+             * any TLS handshake I/O has started, even if it later fails.
+             */
+            s->handshake_started = 1;
             result = tls_do_handshake(&s->connection);
             status = map_backend_result(result);
             if (status == CRYPTO_TLS_OK)
@@ -317,6 +328,174 @@ crypto_tls_result crypto_tls_session_cancel(crypto_tls_session *s)
     if (!s) return CRYPTO_TLS_INVALID_ARGUMENT;
     atomic_store_explicit(&s->cancelled, 1, memory_order_release);
     return CRYPTO_TLS_OK;
+}
+
+/* Additive v1.1 extension; the v1 ABI marker remains unchanged. */
+uint32_t crypto_tls_extension_abi_version(void)
+{
+    return CRYPTO_TLS_EXTENSION_ABI_VERSION;
+}
+
+crypto_tls_result crypto_tls_get_features_v1_1(uint64_t *out_features)
+{
+    if (!out_features) return CRYPTO_TLS_INVALID_ARGUMENT;
+    *out_features =
+        CRYPTO_TLS_FEATURE_TLS12_ECDHE_RSA |
+        CRYPTO_TLS_FEATURE_TLS13_RSA_PSS |
+        CRYPTO_TLS_FEATURE_EXPLICIT_CA_FILE |
+        CRYPTO_TLS_FEATURE_DNS_SAN |
+        CRYPTO_TLS_FEATURE_TEXT_ALPN |
+        CRYPTO_TLS_FEATURE_SESSION_INFO;
+    return CRYPTO_TLS_OK;
+}
+
+crypto_tls_result crypto_tls_session_set_alpn_v1_1(
+    crypto_tls_session *s, const char *const *names, size_t count)
+{
+    crypto_tls_result status;
+    size_t i, j, wire_total = 0u;
+    size_t lengths[CRYPTO_TLS_ALPN_MAX_PROTOCOLS] = {0};
+    if (!names || !count || count > CRYPTO_TLS_ALPN_MAX_PROTOCOLS)
+        return CRYPTO_TLS_INVALID_ARGUMENT;
+    status = lock_session(s);
+    if (status != CRYPTO_TLS_OK) return status;
+
+    if (s->handshake_started || s->alpn_configured
+        || atomic_load_explicit(&s->cancelled, memory_order_acquire)) {
+        status = CRYPTO_TLS_INVALID_ARGUMENT;
+        goto finished;
+    }
+
+    /* Full validation before modifying the native TLS_CTX borrowed list. */
+    for (i = 0u; i < count; ++i) {
+        size_t len = 0u;
+        if (!names[i]) {
+            status = CRYPTO_TLS_INVALID_ARGUMENT;
+            goto finished;
+        }
+        while (len <= CRYPTO_TLS_ALPN_MAX_NAME_BYTES && names[i][len])
+            ++len;
+        if (!len || len > CRYPTO_TLS_ALPN_MAX_NAME_BYTES
+            || wire_total > 2048u - (len + 1u)) {
+            status = CRYPTO_TLS_INVALID_ARGUMENT;
+            goto finished;
+        }
+        for (j = 0u; j < len; ++j) {
+            unsigned char c = (unsigned char)names[i][j];
+            if (c < 0x21u || c > 0x7eu) {
+                status = CRYPTO_TLS_INVALID_ARGUMENT;
+                goto finished;
+            }
+        }
+        for (j = 0u; j < i; ++j) {
+            if (lengths[j] == len && memcmp(names[i], names[j], len) == 0) {
+                status = CRYPTO_TLS_INVALID_ARGUMENT;
+                goto finished;
+            }
+        }
+        lengths[i] = len;
+        wire_total += len + 1u;
+    }
+
+    for (i = 0u; i < count; ++i) {
+        memcpy(s->alpn_storage[i], names[i], lengths[i]);
+        s->alpn_storage[i][lengths[i]] = '\0';
+        s->alpn_names[i] = s->alpn_storage[i];
+    }
+    /* The GmSSL setter borrows both the char** and its strings. Both live
+     * inside the opaque session; no stack pointer or caller buffer escapes.
+     */
+    if (tls_ctx_set_application_layer_protocol_negotiation(
+            &s->context, s->alpn_names, count) != 1) {
+        status = CRYPTO_TLS_BACKEND_ERROR;
+        goto finished;
+    }
+    s->alpn_count = count;
+    s->alpn_configured = 1;
+    status = CRYPTO_TLS_OK;
+finished:
+    unlock_session(s);
+    return status;
+}
+
+crypto_tls_result crypto_tls_session_get_info_v1_1(
+    crypto_tls_session *s, crypto_tls_session_info_v1_1 *out_info)
+{
+    crypto_tls_session_info_v1_1 temp;
+    crypto_tls_result status;
+    const char *cipher_name = NULL;
+    const char *selected = NULL;
+    int protocol = 0, cipher = 0, ret;
+    size_t i, cipher_len = 0u, selected_len = 0u;
+    int found = 0;
+    if (!out_info || out_info->struct_size != sizeof(*out_info))
+        return CRYPTO_TLS_INVALID_ARGUMENT;
+    status = lock_session(s);
+    if (status != CRYPTO_TLS_OK) return status;
+    if (atomic_load_explicit(&s->cancelled, memory_order_acquire)) {
+        status = CRYPTO_TLS_CANCELLED;
+        goto finished;
+    }
+    status = completed_handshake(&s->connection);
+    if (status != CRYPTO_TLS_OK) goto finished;
+
+    if (tls_get_negotiated_protocol(&s->connection, &protocol) != 1
+        || (protocol != TLS_protocol_tls12 && protocol != TLS_protocol_tls13)
+        || tls_get_negotiated_cipher_suite(&s->connection, &cipher) != 1
+        || cipher <= 0
+        || tls_get_negotiated_cipher_name(&s->connection, &cipher_name) != 1
+        || !cipher_name) {
+        status = CRYPTO_TLS_BACKEND_ERROR;
+        goto finished;
+    }
+    while (cipher_len < CRYPTO_TLS_CIPHER_NAME_CAPACITY &&
+           cipher_name[cipher_len]) ++cipher_len;
+    if (!cipher_len || cipher_len >= CRYPTO_TLS_CIPHER_NAME_CAPACITY) {
+        status = CRYPTO_TLS_BACKEND_ERROR;
+        goto finished;
+    }
+
+    memset(&temp, 0, sizeof(temp));
+    temp.struct_size = sizeof(temp);
+    temp.protocol = (uint32_t)protocol;
+    temp.cipher_suite = (uint32_t)cipher;
+    memcpy(temp.cipher_name, cipher_name, cipher_len);
+    temp.cipher_name[cipher_len] = '\0';
+
+    ret = tls_get_selected_alpn(&s->connection, &selected, &selected_len);
+    if (ret < 0) {
+        status = CRYPTO_TLS_BACKEND_ERROR;
+        goto finished;
+    }
+    if (ret == 1) {
+        if (!selected || !selected_len
+            || selected_len > CRYPTO_TLS_ALPN_MAX_NAME_BYTES) {
+            status = CRYPTO_TLS_BACKEND_ERROR;
+            goto finished;
+        }
+        for (i = 0; i < s->alpn_count; ++i) {
+            if (strlen(s->alpn_storage[i]) == selected_len
+                && memcmp(s->alpn_storage[i], selected, selected_len) == 0) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            /* A selected protocol must come from this session's owned
+             * offered list, never an untracked backend/caller pointer.
+             */
+            status = CRYPTO_TLS_BACKEND_ERROR;
+            goto finished;
+        }
+        memcpy(temp.alpn, selected, selected_len);
+        temp.alpn[selected_len] = '\0';
+        temp.alpn_size = (uint32_t)selected_len;
+    }
+    *out_info = temp;
+    status = CRYPTO_TLS_OK;
+finished:
+    unlock_session(s);
+    return status;
 }
 
 crypto_tls_result crypto_tls_session_destroy(crypto_tls_session **session)
