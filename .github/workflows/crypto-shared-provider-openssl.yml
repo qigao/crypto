@@ -12,6 +12,7 @@ on:
       - "tools/qualify_crypto_shared_openssl.sh"
       - "tools/qualify_crypto_exporter_openssl.sh"
       - "tools/qualify_crypto_server_openssl.sh"
+      - "tools/qualify_crypto_server_api_openssl.sh"
       - "tools/assemble_gmssl.cmake"
       - "providers/gmssl/hardening/**"
       - "providers/gmssl/diagnostics/**"
@@ -123,6 +124,10 @@ jobs:
           # OpenSSL3 default KeyShare (may be X25519) must interoperate via
           # HelloRetryRequest to our explicitly supported P-256 group.
           # This is mandatory, not an xfail or an alias for direct P-256.
+          bash tools/qualify_crypto_server_api_openssl.sh \
+            "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" \
+            "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_api_peer_client" \
+            "$RUNNER_TEMP/crypto-shared-peer" 9950
           CRYPTO_TLS_TEST_HRR_ONLY=1 bash tools/qualify_crypto_server_openssl.sh \
             "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" \
             "$RUNNER_TEMP/crypto-shared-peer" 9920
