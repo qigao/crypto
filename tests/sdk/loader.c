@@ -14,6 +14,7 @@ static int one_cycle(const char *library_path, int iteration)
     const crypto_tls_module_api *api = NULL;
     crypto_tls_provider *provider = NULL;
     uint32_t count = UINT32_MAX;
+    uint64_t features = 0u;
     int rc = 1;
     if (crypto_tls_module_open(library_path, &module) != CRYPTO_TLS_OK
         || !module) goto done;
@@ -25,7 +26,11 @@ static int one_cycle(const char *library_path, int iteration)
         goto done;
     if (!api || api->struct_size != sizeof(*api)
         || api->abi_version != CRYPTO_TLS_ABI_VERSION
-        || api->version() != CRYPTO_TLS_ABI_VERSION)
+        || api->version() != CRYPTO_TLS_ABI_VERSION
+        || api->extension_version() != CRYPTO_TLS_EXTENSION_ABI_VERSION
+        || api->features_v1_1(&features) != CRYPTO_TLS_OK
+        || !(features & CRYPTO_TLS_FEATURE_TEXT_ALPN)
+        || !(features & CRYPTO_TLS_FEATURE_SESSION_INFO))
         goto done;
     if (api->provider_create(CRYPTO_TLS_ABI_VERSION, &provider) != CRYPTO_TLS_OK
         || !provider
