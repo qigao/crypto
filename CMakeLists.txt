@@ -85,8 +85,13 @@ install(DIRECTORY include/crypto
   FILES_MATCHING PATTERN "*.h")
 # Expose the vetted GmSSL SM3 API directly from the same static archive;
 # no Crypto Provider header, trampoline or independently installed GmSSL lib.
-install(FILES "${CRYPTO_GMSSL_SOURCE}/include/gmssl/sm3.h"
+# Explicitly canonicalize the absolute source path before generating
+# cmake_install.cmake: on Windows GITHUB_WORKSPACE may contain backslashes.
+file(TO_CMAKE_PATH "${CRYPTO_GMSSL_SOURCE}/include/gmssl/sm3.h"
+  _crypto_gmssl_sm3_header)
+install(FILES "${_crypto_gmssl_sm3_header}"
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gmssl")
+unset(_crypto_gmssl_sm3_header)
 install(FILES "${_libecc}/LICENSE"
   DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/Crypto/libecc)
 
