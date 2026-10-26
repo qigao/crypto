@@ -4,6 +4,7 @@
  */
 #define CRYPTO_TLS_BUILD_DLL 1
 #include <crypto/tls.h>
+#include <crypto/tls_ext.h>
 
 uint32_t crypto_tls_abi_version(void)
 {
@@ -77,5 +78,27 @@ crypto_tls_result crypto_tls_session_destroy(crypto_tls_session **session)
 {
     (void)session;
     return CRYPTO_TLS_BACKEND_ERROR;
+}
+crypto_tls_result crypto_tls_session_get_info_v1_1(
+    crypto_tls_session *session, crypto_tls_session_info_v1_1 *out_info)
+{
+    (void)session;
+    (void)out_info;
+    return CRYPTO_TLS_BACKEND_ERROR;
+}
+crypto_tls_result crypto_tls_session_set_alpn_v1_1(
+    crypto_tls_session *session, const char *const *names, size_t count)
+{
+    (void)session; (void)names; (void)count;
+    return CRYPTO_TLS_BACKEND_ERROR;
+}
+crypto_tls_result crypto_tls_get_features_v1_1(uint64_t *out_features)
+{
+    if (out_features) *out_features = 0u;
+    return CRYPTO_TLS_BACKEND_ERROR;
+}
+uint32_t crypto_tls_extension_abi_version(void)
+{
+    return CRYPTO_TLS_EXTENSION_ABI_VERSION;
 }
 #endif
