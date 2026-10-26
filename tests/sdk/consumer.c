@@ -1,5 +1,6 @@
 /* Installed SDK consumer. NO GmSSL header, linker target, or source access. */
 #include <crypto/tls.h>
+#include <crypto/tls_ext.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -70,7 +71,8 @@ static int acceptable(crypto_tls_result r)
     return r == CRYPTO_TLS_OK || r == CRYPTO_TLS_AGAIN;
 }
 
-static int test_protocol(crypto_tls_provider *provider, uint32_t protocol)
+static int test_protocol(crypto_tls_provider *provider, uint32_t protocol,
+                         int configure_alpn)
 {
     pipe cs = {{0},0u}, sc = {{0},0u};
     channel client_channel = {&cs,&sc,0,0,0,0};
@@ -86,6 +88,12 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol)
         NULL,NULL,SDK_SERVER_CERT_FILE,SDK_SERVER_KEY_FILE,"",0
     };
     crypto_tls_session *client = NULL, *server = NULL;
+    static const char *client_names[] = {"http/1.1", "h2"};
+    static const char *server_names[] = {"h2", "http/1.1"};
+    crypto_tls_session_info_v1_1 client_info, server_info, untouched;
+    static const char *invalid_names[] = {"", "h2"};
+    char too_long_name[CRYPTO_TLS_ALPN_MAX_NAME_BYTES + 2u];
+    const char *too_long[] = {too_long_name};
     uint32_t sessions = 0;
     const uint8_t sent[] = "Crypto shared C11 TLS opaque session real record";
     uint8_t received[sizeof(sent)] = {0};
@@ -101,6 +109,31 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol)
         goto cleanup;
     if (crypto_tls_provider_session_count(provider,&sessions) != CRYPTO_TLS_OK
         || sessions != 2) goto cleanup;
+
+    memset(&client_info, 0xA5, sizeof(client_info));
+    client_info.struct_size = sizeof(client_info);
+    untouched = client_info;
+    if (crypto_tls_session_get_info_v1_1(client, &client_info)
+            != CRYPTO_TLS_AGAIN
+        || memcmp(&client_info, &untouched, sizeof(client_info)) != 0)
+        goto cleanup;
+
+    if (configure_alpn) {
+        memset(too_long_name, 'a', sizeof(too_long_name));
+        too_long_name[sizeof(too_long_name)-1] = '\0';
+        if (crypto_tls_session_set_alpn_v1_1(client, invalid_names, 2)
+                != CRYPTO_TLS_INVALID_ARGUMENT
+            || crypto_tls_session_set_alpn_v1_1(client, too_long, 1)
+                != CRYPTO_TLS_INVALID_ARGUMENT
+            || crypto_tls_session_set_alpn_v1_1(client, client_names, 2)
+                != CRYPTO_TLS_OK
+            || crypto_tls_session_set_alpn_v1_1(server, server_names, 2)
+                != CRYPTO_TLS_OK
+            || crypto_tls_session_set_alpn_v1_1(client, client_names, 2)
+                != CRYPTO_TLS_INVALID_ARGUMENT)
+            goto cleanup;
+    }
+
     {
         crypto_tls_provider *borrowed = provider;
         if (crypto_tls_provider_destroy(&borrowed) != CRYPTO_TLS_BUSY
@@ -120,6 +153,30 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol)
         if (client_ready && server_ready) break;
     }
     if (!client_ready || !server_ready) goto cleanup;
+
+    client_info.struct_size = sizeof(client_info);
+    memset(&server_info, 0, sizeof(server_info));
+    server_info.struct_size = sizeof(server_info);
+    if (crypto_tls_session_get_info_v1_1(client, &client_info) != CRYPTO_TLS_OK
+        || crypto_tls_session_get_info_v1_1(server, &server_info)
+            != CRYPTO_TLS_OK
+        || client_info.protocol != protocol
+        || server_info.protocol != protocol
+        || !client_info.cipher_suite || !server_info.cipher_suite
+        || client_info.cipher_suite != server_info.cipher_suite
+        || !client_info.cipher_name[0] || !server_info.cipher_name[0]
+        || strcmp(client_info.cipher_name, server_info.cipher_name) != 0
+        || crypto_tls_session_set_alpn_v1_1(client, client_names, 2)
+            != CRYPTO_TLS_INVALID_ARGUMENT)
+        goto cleanup;
+    if (configure_alpn) {
+        if (client_info.alpn_size != 2u || server_info.alpn_size != 2u
+            || strcmp(client_info.alpn, "h2") != 0
+            || strcmp(server_info.alpn, "h2") != 0)
+            goto cleanup;
+    } else if (client_info.alpn_size || server_info.alpn_size
+               || client_info.alpn[0] || server_info.alpn[0])
+        goto cleanup;
 
     for (step=0;step<MAX_DRIVES;step++) {
         if (!sent_done) {
@@ -186,8 +243,22 @@ int main(void)
     crypto_tls_io io = {sizeof(io),0,&ch,on_send,on_recv};
     uint32_t count = UINT32_MAX;
     int rc = 1;
+    uint64_t features = 0u;
+    const uint64_t required_features =
+        CRYPTO_TLS_FEATURE_TLS12_ECDHE_RSA |
+        CRYPTO_TLS_FEATURE_TLS13_RSA_PSS |
+        CRYPTO_TLS_FEATURE_EXPLICIT_CA_FILE |
+        CRYPTO_TLS_FEATURE_DNS_SAN |
+        CRYPTO_TLS_FEATURE_TEXT_ALPN |
+        CRYPTO_TLS_FEATURE_SESSION_INFO;
 
-    if (crypto_tls_abi_version() != CRYPTO_TLS_ABI_VERSION) return 1;
+    if (crypto_tls_abi_version() != CRYPTO_TLS_ABI_VERSION
+        || crypto_tls_extension_abi_version()
+            != CRYPTO_TLS_EXTENSION_ABI_VERSION
+        || crypto_tls_get_features_v1_1(&features) != CRYPTO_TLS_OK
+        || features != required_features
+        || crypto_tls_get_features_v1_1(NULL) != CRYPTO_TLS_INVALID_ARGUMENT)
+        return 1;
     if (crypto_tls_provider_create(CRYPTO_TLS_ABI_VERSION+1,&provider)
         != CRYPTO_TLS_INVALID_ARGUMENT || provider) return 2;
     if (crypto_tls_provider_create(CRYPTO_TLS_ABI_VERSION,&provider)
@@ -195,8 +266,10 @@ int main(void)
     if (crypto_tls_session_create(provider,&bad,&io,&s)
         != CRYPTO_TLS_INVALID_ARGUMENT || s) goto done;
 
-    if (test_protocol(provider,CRYPTO_TLS_1_2) != 0
-        || test_protocol(provider,CRYPTO_TLS_1_3) != 0)
+    if (test_protocol(provider,CRYPTO_TLS_1_2,0) != 0
+        || test_protocol(provider,CRYPTO_TLS_1_3,0) != 0
+        || test_protocol(provider,CRYPTO_TLS_1_2,1) != 0
+        || test_protocol(provider,CRYPTO_TLS_1_3,1) != 0)
         goto done;
 
     bad.ca_file = SDK_CA_FILE;
@@ -214,6 +287,6 @@ done:
     if (s) (void)crypto_tls_session_destroy(&s);
     if (provider && crypto_tls_provider_destroy(&provider) != CRYPTO_TLS_OK)
         rc = 1;
-    if (!rc) puts("Crypto installed C11 opaque TLS 1.2/1.3 handshake, data, cancel, shutdown: PASS");
+    if (!rc) puts("Crypto installed C11 TLS1.2/1.3 handshake, ALPN, cipher info, data, cancel and shutdown: PASS");
     return rc;
 }
