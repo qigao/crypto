@@ -26,7 +26,7 @@ gmssl_replace_once(
 		fprintf(stderr,
 			"CRYPTO_TLS_PRIVATE_CKE_DIAG state=%d record_type=%u protocol=%u "
 			"record_len=%zu payload=%zu handshake_type=%u declared_body=%zu "
-			"available_body=%zu\\n",
+			"available_body=%zu\n",
 			conn->handshake_state, record_type, protocol, conn->recordlen,
 			record_payload, message_type, advertised,
 			conn->recordlen >= 9u ? conn->recordlen - 9u : 0u);
@@ -55,7 +55,7 @@ gmssl_replace_once(
 		if (ret != TLS_ERROR_RECV_AGAIN) {
 			fprintf(stderr,
 				"CRYPTO_TLS_PRIVATE_CKE_RECV ret=%d state=%d recordlen=%zu "
-				"record_offset=%zu\\n",
+				"record_offset=%zu\n",
 				ret, conn->handshake_state, conn->recordlen,
 				conn->record_offset);
 		}
@@ -77,7 +77,7 @@ gmssl_replace_once(
 		|| tls_init_application_keys(conn) != 1) {
 ]==]
   [==[	fprintf(stderr,
-		"CRYPTO_TLS_PRIVATE_CKE_PARSED state=%d point_len=%zu\\n",
+		"CRYPTO_TLS_PRIVATE_CKE_PARSED state=%d point_len=%zu\n",
 		conn->handshake_state, point_octets_len);
 	if (point_octets_len != 65) {
 		error_print();
@@ -92,7 +92,7 @@ gmssl_replace_once(
 		|| (crypto_private_key_stage = 3, tls_derive_key_block(conn) != 1)
 		|| (crypto_private_key_stage = 4, tls_init_application_keys(conn) != 1)) {
 		fprintf(stderr,
-			"CRYPTO_TLS_PRIVATE_CKE_DERIVE stage=%d state=%d\\n",
+			"CRYPTO_TLS_PRIVATE_CKE_DERIVE stage=%d state=%d\n",
 			crypto_private_key_stage, conn->handshake_state);
 ]==]
 )
