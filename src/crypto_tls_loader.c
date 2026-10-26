@@ -103,10 +103,16 @@ crypto_tls_result crypto_tls_module_open(
     LOAD(features_v1_1, "crypto_tls_get_features_v1_1");
     LOAD(session_set_alpn_v1_1, "crypto_tls_session_set_alpn_v1_1");
     LOAD(session_get_info_v1_1, "crypto_tls_session_get_info_v1_1");
+    LOAD(peer_version_v1_2, "crypto_tls_peer_abi_version");
+    LOAD(peer_features_v1_2, "crypto_tls_peer_features_v1_2");
+    LOAD(peer_copy_chain_v1_2, "crypto_tls_session_copy_peer_chain_v1_2");
+    LOAD(peer_sha256_v1_2, "crypto_tls_session_peer_sha256_v1_2");
+    LOAD(session_export_v1_2, "crypto_tls_session_export_v1_2");
 #undef LOAD
 
     if (module->api.version() != CRYPTO_TLS_ABI_VERSION
-        || module->api.extension_version() != CRYPTO_TLS_EXTENSION_ABI_VERSION)
+        || module->api.extension_version() != CRYPTO_TLS_EXTENSION_ABI_VERSION
+        || module->api.peer_version_v1_2() != CRYPTO_TLS_PEER_ABI_VERSION)
         goto failed;
     *out_module = module;
     return CRYPTO_TLS_OK;
