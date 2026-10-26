@@ -95,6 +95,7 @@ int main(int argc,char **argv)
     crypto_tls_session_info_v1_1 info;
     uint8_t sha[CRYPTO_TLS_PEER_SHA256_BYTES];
     uint8_t keymat[32];
+    uint8_t reference_secret[32] = {0};
     uint8_t chain[CRYPTO_TLS_PEER_CHAIN_MAX_BYTES];
     uint8_t der[CRYPTO_TLS_PEER_CHAIN_MAX_BYTES];
     char shahex[CRYPTO_TLS_PEER_SHA256_BYTES*2u+1u];
@@ -108,7 +109,7 @@ int main(int argc,char **argv)
     uint8_t response[8192];
     size_t total=0,sent=0;
     int sending=1;
-    if(argc!=8){fprintf(stderr,"usage: sdk-openssl-client 12|13 port ca-file hostname good|reject sha256-hex leaf-der\n");return 2;}
+    if(argc!=8 && argc!=9){fprintf(stderr,"usage: sdk-openssl-client 12|13 port ca-file hostname good|reject sha256-hex leaf-der [private-exporter-file]\n");return 2;}
     if(strcmp(argv[1],"12")==0)protocol=CRYPTO_TLS_1_2;
     else if(strcmp(argv[1],"13")==0)protocol=CRYPTO_TLS_1_3;
     else return 2;
@@ -205,6 +206,15 @@ int main(int argc,char **argv)
         if (keymat[j] != 0u) break;
     if (j == sizeof(keymat)) goto done;
 
+    /* The optional reference test derives the NO-CONTEXT form used by
+     * OpenSSL SSL_export_keying_material(...,use_context=0). Never confuse
+     * it with the TLS 1.2 CNet context-present-empty channel binding.
+     */
+    if(argc == 9 && crypto_tls_session_export_v1_2(
+        session, "EXPORTER-Channel-Binding", NULL, 0u, 0u,
+        reference_secret, sizeof(reference_secret)) != CRYPTO_TLS_OK)
+        goto done;
+
     deadline=monotonic_ms()+MAX_RUN_MS;
     while(monotonic_ms()<deadline){
         if(sending){
@@ -228,6 +238,31 @@ int main(int argc,char **argv)
         short_pause();
     }
 done:
+    /* Publish test secret only if the entire authenticated TLS/HTTP check
+     * succeeded. Never print or upload any exporter-derived key material.
+     */
+    if(rc == 0 && argc == 9){
+        static const char hexdigits[] = "0123456789ABCDEF";
+        char hex[sizeof(reference_secret)*2u+1u];
+        int fd = -1;
+        ssize_t wrote;
+        for(j = 0u; j < sizeof(reference_secret); ++j){
+            hex[j*2u] = hexdigits[reference_secret[j] >> 4u];
+            hex[j*2u+1u] = hexdigits[reference_secret[j] & 15u];
+        }
+        hex[sizeof(hex)-1u] = '\n';
+        fd = open(argv[8], O_WRONLY|O_CREAT|O_EXCL, 0600);
+        if(fd < 0){rc = 1;}
+        else {
+            wrote = write(fd, hex, sizeof(hex));
+            if(close(fd) != 0 || wrote != (ssize_t)sizeof(hex)){
+                (void)unlink(argv[8]);
+                rc = 1;
+            }
+        }
+        memset(hex, 0, sizeof(hex));
+    }
+    memset(reference_secret, 0, sizeof(reference_secret));
     if(leaf) (void)fclose(leaf);
     /* Never print or upload exporter keying material or session secrets. */
     memset(keymat,0,sizeof(keymat));
