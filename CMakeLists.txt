@@ -95,7 +95,7 @@ install(TARGETS CryptoTLSProvider CryptoTLSHost CryptoProviderView
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES include/crypto/tls.h include/crypto/tls_ext.h include/crypto/loader.h include/crypto/provider.h
+install(FILES include/crypto/tls.h include/crypto/tls_ext.h include/crypto/tls_peer.h include/crypto/loader.h include/crypto/provider.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/crypto)
 install(EXPORT CryptoTLSTargets
   NAMESPACE Crypto:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
