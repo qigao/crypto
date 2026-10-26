@@ -42,6 +42,11 @@ openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
 openssl verify -CAfile "$work/ca.pem" -purpose sslserver \
   -verify_hostname localhost "$work/leaf.pem" \
   >"$work/fixture-positive.log"
+# Independent OpenSSL3 DER/fingerprint oracle for the installed Crypto v1.2
+# peer API. Do not share or upload generated private test keys.
+openssl x509 -in "$work/leaf.pem" -outform DER -out "$work/leaf.der"
+leaf_sha256="$(openssl dgst -sha256 -r "$work/leaf.der" | awk '{print $1}')"
+[[ "$leaf_sha256" =~ ^[0-9a-f]{64}$ ]]
 if openssl verify -CAfile "$work/wrong-ca.pem" \
   -verify_hostname localhost "$work/leaf.pem" \
   >"$work/fixture-negative.log" 2>&1; then
@@ -83,12 +88,15 @@ for protocol in 12 13; do
   fi
 
   "$sdk_client" "$protocol" "$port" "$work/ca.pem" localhost good \
+    "$leaf_sha256" "$work/leaf.der" \
     >"$work/facade-$protocol-good.out" \
     2>"$work/facade-$protocol-good.err"
   "$sdk_client" "$protocol" "$port" "$work/wrong-ca.pem" localhost reject \
+    "$leaf_sha256" "$work/leaf.der" \
     >"$work/facade-$protocol-wrong-ca.out" \
     2>"$work/facade-$protocol-wrong-ca.err"
   "$sdk_client" "$protocol" "$port" "$work/ca.pem" wrong.example reject \
+    "$leaf_sha256" "$work/leaf.der" \
     >"$work/facade-$protocol-wrong-host.out" \
     2>"$work/facade-$protocol-wrong-host.err"
   cleanup
