@@ -17,6 +17,8 @@ Crypto-owned C11 TLS/CipherBIO/SHA256/Ed448 sources, reviewed private libecc
 Ed448-only objects, **and the GmSSL static archive obtained from vcpkg**.
 `GmSSL::GmSSL` is build-only, never exported or transitively linked by an
 installed Crypto target; no second GmSSL SDK archive/DSO is shipped by Crypto.
+Crypto also installs the pinned GmSSL Apache-2.0 license and vendored
+libecc BSD license with the combined archive.
 
 ## Install and build
 

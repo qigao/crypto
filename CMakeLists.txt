@@ -140,6 +140,14 @@ file(TO_CMAKE_PATH "${_gmssl_prefix}/include/gmssl/sm3.h"
 install(FILES "${_crypto_gmssl_sm3_header}"
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gmssl")
 unset(_crypto_gmssl_sm3_header)
+# The linked GmSSL source and public sm3.h are Apache-2.0. Redistribute
+# the license from the exact installed vcpkg package, not a copied vendor tree.
+if(NOT EXISTS "${_gmssl_prefix}/share/gmssl/copyright")
+  message(FATAL_ERROR "vcpkg GmSSL license missing from installed package")
+endif()
+install(FILES "${_gmssl_prefix}/share/gmssl/copyright"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/Crypto/GmSSL"
+  RENAME LICENSE)
 install(FILES "${_libecc}/LICENSE"
   DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/Crypto/libecc)
 
