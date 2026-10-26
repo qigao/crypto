@@ -17,6 +17,8 @@ endif()
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+include(CTest)
+find_package(Threads REQUIRED)
 
 set(_libecc "${CMAKE_CURRENT_SOURCE_DIR}/vendor/libecc")
 file(GLOB _arith CONFIGURE_DEPENDS
@@ -29,8 +31,7 @@ set(_ed448_sources ${_arith} ${_curves}
   "${_libecc}/src/sig/ec_key.c"
   "${_libecc}/src/sig/eddsa.c"
   "${_libecc}/src/sig/sig_algs.c"
-  "${_libecc}/src/utils/utils.c"
-  "${_libecc}/src/utils/utils_rand.c")
+  "${_libecc}/src/utils/utils.c")
 
 # No separate libecc archive; only its required Ed448 code is compiled.
 # SHA256 is the existing, pinned GmSSL implementation, not a duplicate libecc SHA.
@@ -48,6 +49,7 @@ set_target_properties(salts_crypto PROPERTIES
   C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
   POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 target_compile_features(salts_crypto PUBLIC c_std_11)
+target_link_libraries(salts_crypto PUBLIC Threads::Threads)
 target_include_directories(salts_crypto
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -108,6 +110,6 @@ install(FILES
   DESTINATION "${_package_dir}")
 
 if(BUILD_TESTING)
-  include(CTest)
+  enable_language(CXX)
   add_subdirectory(tests/algorithms)
 endif()
