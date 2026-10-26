@@ -4,6 +4,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
+#include <crypto/tls_peer.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -92,6 +93,13 @@ int main(int argc,char **argv)
     crypto_tls_io io;
     static const char *alpn_names[] = {"http/1.1", "h2"};
     crypto_tls_session_info_v1_1 info;
+    uint8_t sha[CRYPTO_TLS_PEER_SHA256_BYTES];
+    uint8_t keymat[32];
+    uint8_t chain[CRYPTO_TLS_PEER_CHAIN_MAX_BYTES];
+    uint8_t der[CRYPTO_TLS_PEER_CHAIN_MAX_BYTES];
+    char shahex[CRYPTO_TLS_PEER_SHA256_BYTES*2u+1u];
+    size_t chain_len = 0u, der_len = 0u, j;
+    FILE *leaf = NULL;
     crypto_tls_result status=CRYPTO_TLS_INVALID_ARGUMENT;
     transport t={-1,0,0};
     int port,protocol,want_success,success=0,step,rc=1;
@@ -100,7 +108,7 @@ int main(int argc,char **argv)
     uint8_t response[8192];
     size_t total=0,sent=0;
     int sending=1;
-    if(argc!=6){fprintf(stderr,"usage: sdk-openssl-client 12|13 port ca-file hostname good|reject\n");return 2;}
+    if(argc!=8){fprintf(stderr,"usage: sdk-openssl-client 12|13 port ca-file hostname good|reject sha256-hex leaf-der\n");return 2;}
     if(strcmp(argv[1],"12")==0)protocol=CRYPTO_TLS_1_2;
     else if(strcmp(argv[1],"13")==0)protocol=CRYPTO_TLS_1_3;
     else return 2;
@@ -160,6 +168,43 @@ int main(int argc,char **argv)
         goto done;
     }
 
+    if (crypto_tls_peer_abi_version() != CRYPTO_TLS_PEER_ABI_VERSION
+        || crypto_tls_session_peer_sha256_v1_2(session,sha) != CRYPTO_TLS_OK)
+        goto done;
+    for (j = 0u; j < sizeof(sha); ++j)
+        (void)snprintf(shahex + j*2u, 3u, "%02x", (unsigned)sha[j]);
+    if (strlen(argv[6]) != 64u || strcmp(shahex, argv[6]) != 0)
+        goto done;
+
+    if (crypto_tls_session_copy_peer_chain_v1_2(
+            session, chain, sizeof(chain), &chain_len) != CRYPTO_TLS_OK
+        || !chain_len)
+        goto done;
+    leaf = fopen(argv[7],"rb");
+    if (!leaf) goto done;
+    der_len = fread(der, 1u, sizeof(der), leaf);
+    if (ferror(leaf) || !feof(leaf)) {
+        /* If the input was exactly full, require an explicit EOF check. */
+        if (der_len == sizeof(der) && fgetc(leaf) == EOF && !ferror(leaf)) {
+            /* acceptable full-size input */
+        } else goto done;
+    }
+    if (fclose(leaf) != 0) {
+        leaf = NULL;
+        goto done;
+    }
+    leaf = NULL;
+    if (!der_len || der_len > chain_len ||
+        memcmp(chain,der,der_len) != 0)
+        goto done;
+    if (crypto_tls_session_export_v1_2(
+            session, "EXPORTER-Channel-Binding", NULL, 0u, 1u,
+            keymat, sizeof(keymat)) != CRYPTO_TLS_OK)
+        goto done;
+    for (j = 0u; j < sizeof(keymat); ++j)
+        if (keymat[j] != 0u) break;
+    if (j == sizeof(keymat)) goto done;
+
     deadline=monotonic_ms()+MAX_RUN_MS;
     while(monotonic_ms()<deadline){
         if(sending){
@@ -183,6 +228,9 @@ int main(int argc,char **argv)
         short_pause();
     }
 done:
+    if(leaf) (void)fclose(leaf);
+    /* Never print or upload exporter keying material or session secrets. */
+    memset(keymat,0,sizeof(keymat));
     if(session && crypto_tls_session_destroy(&session)!=CRYPTO_TLS_OK)rc=1;
     if(provider && crypto_tls_provider_destroy(&provider)!=CRYPTO_TLS_OK)rc=1;
     if(t.fd>=0)close(t.fd);
