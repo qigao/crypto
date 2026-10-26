@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Independent exporter BYTE oracle on one real TLS session.
-# Crypto is the already-qualified installed C11 TLS CLIENT.
-# A separate TEST-ONLY server links OpenSSL 3 and uses the native
-# SSL_export_keying_material() API. Production Crypto links NO OpenSSL.
+# Independent exporter BYTE oracle on one real TLS connection.
+# Crypto is the verified installed C11 TLS CLIENT; only the separate
+# TEST-ONLY server links OpenSSL 3 SSL_export_keying_material().
+# Compare omitted context and the CNet RFC9266 present-but-empty context.
 set -euo pipefail
 
 crypto_client="${1:?installed Crypto C11 client required}"
@@ -27,7 +27,7 @@ cleanup() {
     wait "$server_pid" 2>/dev/null || true
     server_pid=""
   fi
-  # Never upload session-derived keying material or any raw TLS transcript.
+  # Nothing derived from TLS keying material may leave private scratch.
   rm -f "$work"/native-exporter-*.secret \
         "$work"/openssl-exporter-*.secret \
         "$work"/native-exporter-*.private \
@@ -37,11 +37,14 @@ trap cleanup EXIT
 
 for protocol in 12 13; do
   port="$((base_port + protocol - 12))"
-  native_secret="$work/native-exporter-$protocol.secret"
-  openssl_secret="$work/openssl-exporter-$protocol.secret"
+  native_none="$work/native-exporter-$protocol-none.secret"
+  native_empty="$work/native-exporter-$protocol-empty.secret"
+  openssl_none="$work/openssl-exporter-$protocol-none.secret"
+  openssl_empty="$work/openssl-exporter-$protocol-empty.secret"
 
   "$openssl_oracle_server" "$protocol" "$port" \
-    "$work/leaf.pem" "$work/leaf-key.pem" "$openssl_secret" \
+    "$work/leaf.pem" "$work/leaf-key.pem" \
+    "$openssl_none" "$openssl_empty" \
     >"$work/openssl-exporter-$protocol.private" 2>&1 &
   server_pid=$!
   sleep 1
@@ -50,41 +53,54 @@ for protocol in 12 13; do
     exit 1
   fi
 
-  # This Crypto CLIENT already passes strict OpenSSL CA/SAN, ALPN h2,
-  # bounded socket I/O, DER identity and authenticated HTTP tests.
-  # Optional final argument writes ONLY the no-context TLS exporter bytes.
+  # This client is linked ONLY to Crypto::TLS (one private GmSSL DSO).
+  # It independently verifies real CA/SAN, h2, DER, SHA256 and HTTP.
   if ! "$crypto_client" "$protocol" "$port" "$work/ca.pem" \
-      localhost good "$leaf_sha256" "$work/leaf.der" "$native_secret" \
+      localhost good "$leaf_sha256" "$work/leaf.der" \
+      "$native_none" "$native_empty" \
       >"$work/native-exporter-$protocol.private" 2>&1; then
-    echo "Crypto C11 client failed independent OpenSSL3 exporter TLS/HTTP test" >&2
+    echo "Crypto client failed independent OpenSSL3 exporter TLS/HTTP test" >&2
     exit 1
   fi
-
-  # The reference must also finish its own TLS/HTTP flow successfully.
   if ! wait "$server_pid"; then
     server_pid=""
-    echo "Independent OpenSSL3 server failed a real TLS/HTTP session" >&2
+    echo "Independent OpenSSL3 oracle did not finish TLS/HTTP" >&2
     exit 1
   fi
   server_pid=""
-  test -s "$native_secret"
-  test -s "$openssl_secret"
 
-  # Strict binary-equivalent 32-byte keying-material comparison; NEVER
-  # log, publish, or attach either value. Both are from the SAME session.
-  native_hex="$(tr -d '\r\n' < "$native_secret")"
-  openssl_hex="$(tr -d '\r\n' < "$openssl_secret")"
-  if [[ ! "$native_hex" =~ ^[0-9A-F]{64}$ ]] ||
-     [[ ! "$openssl_hex" =~ ^[0-9A-F]{64}$ ]] ||
-     [[ "$native_hex" != "$openssl_hex" ]]; then
-    echo "Independent OpenSSL3 and Crypto exporter bytes disagree or are missing (TLS $protocol)" >&2
+  # Both independently implemented exporters must agree on BOTH RFC
+  # context forms, on the SAME session, for TLS 1.2 and TLS 1.3.
+  for mode in none empty; do
+    native_file="$work/native-exporter-$protocol-$mode.secret"
+    openssl_file="$work/openssl-exporter-$protocol-$mode.secret"
+    test -s "$native_file"
+    test -s "$openssl_file"
+    native_hex="$(tr -d '\r\n' < "$native_file")"
+    openssl_hex="$(tr -d '\r\n' < "$openssl_file")"
+    if [[ ! "$native_hex" =~ ^[0-9A-F]{64}$ ]] ||
+       [[ ! "$openssl_hex" =~ ^[0-9A-F]{64}$ ]] ||
+       [[ "$native_hex" != "$openssl_hex" ]]; then
+      echo "Crypto/OpenSSL3 exporter mismatch or missing data (TLS $protocol context $mode)" >&2
+      exit 1
+    fi
+    unset native_hex openssl_hex
+  done
+
+  native_none_hex="$(tr -d '\r\n' < "$native_none")"
+  native_empty_hex="$(tr -d '\r\n' < "$native_empty")"
+  # TLS 1.2 RFC5705 context-present adds a zero-length vector to the PRF;
+  # TLS 1.3 RFC8446 always hashes an empty exporter context.
+  if [[ "$protocol" == 12 && "$native_none_hex" == "$native_empty_hex" ]] ||
+     [[ "$protocol" == 13 && "$native_none_hex" != "$native_empty_hex" ]]; then
+    echo "Crypto TLS $protocol RFC exporter empty-context semantics mismatch" >&2
     exit 1
   fi
-  unset native_hex openssl_hex
-  rm -f "$native_secret" "$openssl_secret" \
-    "$work/native-exporter-$protocol.private" \
-    "$work/openssl-exporter-$protocol.private"
-  echo "Crypto client vs independent OpenSSL3 server: TLS $protocol SAME-SESSION exporter bytes and HTTP PASS"
+  unset native_none_hex native_empty_hex
+  rm -f "$native_none" "$native_empty" "$openssl_none" "$openssl_empty" \
+        "$work/native-exporter-$protocol.private" \
+        "$work/openssl-exporter-$protocol.private"
+  echo "Crypto/OpenSSL3 TLS $protocol SAME-SESSION exporter parity PASS (no-context + CNet empty-context + HTTP)"
 done
 
-echo "Independent OpenSSL 3 RFC 5705/8446 exporter byte parity: PASS"
+echo "Independent OpenSSL3 RFC5705/8446 and CNet RFC9266 exporter parity: PASS"
