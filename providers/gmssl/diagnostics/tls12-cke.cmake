@@ -32,3 +32,67 @@ gmssl_replace_once(
 			conn->recordlen >= 9u ? conn->recordlen - 9u : 0u);
 ]==]
 )
+
+# Distinguish pre-CKE record read errors from CKE parser/cryptographic
+# failures. A peer alert is never silently treated as a valid handshake.
+gmssl_replace_once(
+  "${SOURCE_PATH}/src/tls12.c"
+  [==[int tls_recv_client_key_exchange(TLS_CONNECT *conn)
+{
+	int ret;
+	const uint8_t *point_octets;
+	size_t point_octets_len;
+
+	if ((ret = tls_recv_record(conn)) != 1) {
+]==]
+  [==[int tls_recv_client_key_exchange(TLS_CONNECT *conn)
+{
+	int ret;
+	const uint8_t *point_octets;
+	size_t point_octets_len;
+
+	if ((ret = tls_recv_record(conn)) != 1) {
+		if (ret != TLS_ERROR_RECV_AGAIN) {
+			fprintf(stderr,
+				"CRYPTO_TLS_PRIVATE_CKE_RECV ret=%d state=%d recordlen=%zu "
+				"record_offset=%zu\\n",
+				ret, conn->handshake_state, conn->recordlen,
+				conn->record_offset);
+		}
+]==]
+)
+
+gmssl_replace_once(
+  "${SOURCE_PATH}/src/tls12.c"
+  [==[	if (point_octets_len != 65) {
+		error_print();
+		return -1;
+	}
+	memcpy(conn->peer_key_exchange, point_octets, point_octets_len);
+	conn->peer_key_exchange_len = point_octets_len;
+
+	if (tls_derive_pre_master_secret(conn) != 1
+		|| tls_derive_master_secret(conn) != 1
+		|| tls_derive_key_block(conn) != 1
+		|| tls_init_application_keys(conn) != 1) {
+]==]
+  [==[	fprintf(stderr,
+		"CRYPTO_TLS_PRIVATE_CKE_PARSED state=%d point_len=%zu\\n",
+		conn->handshake_state, point_octets_len);
+	if (point_octets_len != 65) {
+		error_print();
+		return -1;
+	}
+	memcpy(conn->peer_key_exchange, point_octets, point_octets_len);
+	conn->peer_key_exchange_len = point_octets_len;
+
+	int crypto_private_key_stage = 0;
+	if ((crypto_private_key_stage = 1, tls_derive_pre_master_secret(conn) != 1)
+		|| (crypto_private_key_stage = 2, tls_derive_master_secret(conn) != 1)
+		|| (crypto_private_key_stage = 3, tls_derive_key_block(conn) != 1)
+		|| (crypto_private_key_stage = 4, tls_init_application_keys(conn) != 1)) {
+		fprintf(stderr,
+			"CRYPTO_TLS_PRIVATE_CKE_DERIVE stage=%d state=%d\\n",
+			crypto_private_key_stage, conn->handshake_state);
+]==]
+)
