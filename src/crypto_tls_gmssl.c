@@ -246,6 +246,17 @@ crypto_tls_result crypto_tls_session_create(
         && options->protocol == CRYPTO_TLS_1_2
         && tls12_ctx_set_renegotiation_info(&s->context, 1) != 1)
         goto fail;
+    /* RFC 8446 section 5.1 optional compatibility ChangeCipherSpec.
+     * OpenSSL3 middlebox-mode clients may send a one-byte dummy CCS
+     * after ClientHello. Accept ONLY a correctly framed CCS using GmSSL's
+     * existing validated optional-record reader; never treat a Finished
+     * or unexpected encrypted record as a CCS, and never bypass MAC
+     * or transcript authentication. This is not TLS 1.2 renegotiation.
+     */
+    if (options->role == CRYPTO_TLS_SERVER
+        && options->protocol == CRYPTO_TLS_1_3
+        && tls13_ctx_set_accept_change_cipher_spec(&s->context, 1) != 1)
+        goto fail;
     if (options->ca_file && options->ca_file[0]
         && tls_ctx_set_ca_certificates(&s->context, options->ca_file, depth) != 1)
         goto fail;
