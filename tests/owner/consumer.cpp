@@ -1,6 +1,7 @@
 #include <crypto/provider.h>
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
+#include <crypto/tls_peer.h>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -13,6 +14,8 @@ int main() {
   crypto_provider_abi_0_1_required();
   if (crypto_tls_extension_abi_version() != CRYPTO_TLS_EXTENSION_ABI_VERSION)
     return 7;
+  if (crypto_tls_peer_abi_version() != CRYPTO_TLS_PEER_ABI_VERSION)
+    return 8;
   if (crypto_tls_abi_version() != CRYPTO_TLS_ABI_VERSION)
     return 4;
   crypto_tls_provider* instance = nullptr;
