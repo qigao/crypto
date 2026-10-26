@@ -11,6 +11,8 @@ on:
       - "tests/owner/**"
       - "tools/qualify_crypto_shared_openssl.sh"
       - "tools/qualify_crypto_exporter_openssl.sh"
+      - "tools/qualify_crypto_hrr_ccs_negative.sh"
+      - "tools/tls13_hrr_ccs_mutation_proxy.py"
       - "tools/assemble_gmssl.cmake"
       - "providers/gmssl/hardening/**"
       - "providers/gmssl/patches/**"
@@ -117,6 +119,13 @@ jobs:
             "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_client" \
             "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_exporter_oracle" \
             "$RUNNER_TEMP/crypto-shared-asan-peer" 9860
+          # Force real HRR, mutate its single compatibility CCS on the wire.
+          # Under native source-instrumented ASan/UBSan/LSan, neither invalid
+          # nor duplicated CCS may reach an authenticated session/exporter.
+          bash tools/qualify_crypto_hrr_ccs_negative.sh \
+            "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_server" \
+            "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_api_peer_client" \
+            "$RUNNER_TEMP/crypto-shared-asan-peer" 9980
       - name: ASan UBSan LSan exact SM3 KAT, shared TLS view and two imported MODULEs
         shell: bash
         run: |
