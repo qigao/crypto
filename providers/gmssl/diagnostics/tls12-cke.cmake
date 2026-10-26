@@ -13,10 +13,16 @@ gmssl_replace_once(
 		size_t record_payload = 0u;
 		size_t advertised = 0u;
 		unsigned record_type = 0u, message_type = 0u, protocol = 0u;
+		unsigned alert_level = 0u, alert_code = 0u;
 		if (conn->recordlen >= 5u && conn->recordlen <= sizeof(conn->record)) {
 			record_type = conn->record[0];
 			protocol = ((unsigned)conn->record[1] << 8) | conn->record[2];
 			record_payload = ((size_t)conn->record[3] << 8) | conn->record[4];
+			if (record_type == TLS_record_alert && conn->recordlen == 7u
+				&& record_payload == 2u) {
+				alert_level = conn->record[5];
+				alert_code = conn->record[6];
+			}
 			if (conn->recordlen >= 9u) {
 				message_type = conn->record[5];
 				advertised = ((size_t)conn->record[6] << 16)
@@ -26,10 +32,11 @@ gmssl_replace_once(
 		fprintf(stderr,
 			"CRYPTO_TLS_PRIVATE_CKE_DIAG state=%d record_type=%u protocol=%u "
 			"record_len=%zu payload=%zu handshake_type=%u declared_body=%zu "
-			"available_body=%zu\n",
+			"available_body=%zu alert_level=%u alert_code=%u\n",
 			conn->handshake_state, record_type, protocol, conn->recordlen,
 			record_payload, message_type, advertised,
-			conn->recordlen >= 9u ? conn->recordlen - 9u : 0u);
+			conn->recordlen >= 9u ? conn->recordlen - 9u : 0u,
+			alert_level, alert_code);
 ]==]
 )
 
