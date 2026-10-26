@@ -130,9 +130,14 @@ include("${_crypto_root}/providers/gmssl/hardening/ubsan-undefined-behavior.cmak
 # Optional independent-interop diagnostics only; never run in a production
 # source handoff. Exact source anchors fail closed on upstream drift.
 set(_private_tls12_trace 0)
+set(_private_tls13_hrr 0)
 if(GMSSL_TLS12_CKE_DIAGNOSTICS)
   include("${_crypto_root}/providers/gmssl/diagnostics/tls12-cke.cmake")
   set(_private_tls12_trace 1)
+endif()
+if(GMSSL_TLS13_HRR_DIAGNOSTICS)
+  include("${_crypto_root}/providers/gmssl/diagnostics/tls13-hrr.cmake")
+  set(_private_tls13_hrr 1)
 endif()
 file(SHA256 "${SOURCE_PATH}/src/secp256r1.c" _p256_sha)
 file(SHA256 "${SOURCE_PATH}/src/secp384r1.c" _p384_sha)
@@ -154,6 +159,7 @@ if(DEFINED GMSSL_ASSEMBLY_RECEIPT)
     "  \"source_adaptations\": ${_n},\n"
     "  \"crypto_hardening_edits\": 5,\n"
     "  \"private_tls12_diagnostic\": ${_private_tls12_trace},\n"
+    "  \"private_tls13_hrr_diagnostic\": ${_private_tls13_hrr},\n"
     "  \"secp256r1_sha256\": \"${_p256_sha}\",\n"
     "  \"secp384r1_sha256\": \"${_p384_sha}\",\n"
     "  \"tls12_sha256\": \"${_tls12_sha}\",\n"
