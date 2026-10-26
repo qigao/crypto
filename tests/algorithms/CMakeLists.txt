@@ -1,0 +1,5 @@
+add_executable(salts_crypto_sha_ed448_vectors sha_ed448_vectors.c)
+target_compile_features(salts_crypto_sha_ed448_vectors PRIVATE c_std_11)
+target_link_libraries(salts_crypto_sha_ed448_vectors PRIVATE Salts::Crypto)
+add_test(NAME crypto.algorithms.sha256_sm3_ed448_rfc8032 COMMAND salts_crypto_sha_ed448_vectors)
+set_tests_properties(crypto.algorithms.sha256_sm3_ed448_rfc8032 PROPERTIES TIMEOUT 120)

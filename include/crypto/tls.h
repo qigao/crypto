@@ -8,17 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(_WIN32)
-# if defined(CRYPTO_TLS_BUILD_DLL)
-#  define CRYPTO_TLS_API __declspec(dllexport)
-# else
-#  define CRYPTO_TLS_API __declspec(dllimport)
-# endif
-#elif defined(__GNUC__) || defined(__clang__)
-# define CRYPTO_TLS_API __attribute__((visibility("default")))
-#else
-# define CRYPTO_TLS_API
-#endif
+#define CRYPTO_TLS_API
 
 #ifdef __cplusplus
 extern "C" {
