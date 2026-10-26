@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -144,6 +145,7 @@ int main(int argc, char **argv)
     if (port <= 0 || port > 65535 || !argv[3][0] || !argv[4][0]
         || !argv[5][0]) return 2;
 
+    (void)signal(SIGPIPE, SIG_IGN);
     transport.fd = accept_local(port);
     if (transport.fd < 0) {
         fprintf(stderr, "Crypto exporter peer: bounded accept failed\n");
