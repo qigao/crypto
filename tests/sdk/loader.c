@@ -14,7 +14,7 @@ static int one_cycle(const char *library_path, int iteration)
     const crypto_tls_module_api *api = NULL;
     crypto_tls_provider *provider = NULL;
     uint32_t count = UINT32_MAX;
-    uint64_t features = 0u;
+    uint64_t features = 0u, peer_features = 0u;
     int rc = 1;
     if (crypto_tls_module_open(library_path, &module) != CRYPTO_TLS_OK
         || !module) goto done;
@@ -30,7 +30,12 @@ static int one_cycle(const char *library_path, int iteration)
         || api->extension_version() != CRYPTO_TLS_EXTENSION_ABI_VERSION
         || api->features_v1_1(&features) != CRYPTO_TLS_OK
         || !(features & CRYPTO_TLS_FEATURE_TEXT_ALPN)
-        || !(features & CRYPTO_TLS_FEATURE_SESSION_INFO))
+        || !(features & CRYPTO_TLS_FEATURE_SESSION_INFO)
+        || api->peer_version_v1_2() != CRYPTO_TLS_PEER_ABI_VERSION
+        || api->peer_features_v1_2(&peer_features) != CRYPTO_TLS_OK
+        || peer_features != (CRYPTO_TLS_PEER_FEATURE_DER_CHAIN_COPY |
+                            CRYPTO_TLS_PEER_FEATURE_CERT_SHA256 |
+                            CRYPTO_TLS_PEER_FEATURE_TLS_EXPORTER))
         goto done;
     if (api->provider_create(CRYPTO_TLS_ABI_VERSION, &provider) != CRYPTO_TLS_OK
         || !provider
