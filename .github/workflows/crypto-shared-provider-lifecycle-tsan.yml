@@ -91,16 +91,53 @@ jobs:
             -DCRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE=ON \
             -DCRYPTO_SDK_ENABLE_HOST_LEASE=ON \
             -DCRYPTO_SDK_ENABLE_HOST_LEASE_RACE=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON \
             "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
           cmake --build build-sdk-tsan --parallel 2
           test "$(ctest --test-dir build-sdk-tsan -N |
-            sed -n 's/^Total Tests: //p')" = 5
+            sed -n 's/^Total Tests: //p')" = 6
       - name: Repeat native callback-in-flight cancellation and DSO host lease races
         shell: bash
         run: |
           set -euo pipefail
           ctest --test-dir build-sdk-tsan \
             -R '^crypto[.]installed[.](inflight_cancel_busy_destroy|host_lease_callback_race)$' \
+            --no-tests=error --output-on-failure --timeout 120 \
+            --repeat until-fail:3
+      - name: Repeat real installed CipherBIO TLS1.2 and TLS1.3 under source TSan
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build-sdk-tsan \
+            -R '^crypto[.]installed[.]cipher_bio_tls12_tls13
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags="-O1 -g -fno-omit-frame-pointer -fsanitize=thread"
+          cmake -S tests/owner -B build-owner-tsan -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            "-DCMAKE_C_FLAGS=$flags" \
+            "-DCMAKE_CXX_FLAGS=$flags" \
+            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread" \
+            "-DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=thread" \
+            "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/_installed-tsan"
+          cmake --build build-owner-tsan --parallel 2
+          test "$(ctest --test-dir build-owner-tsan -N | sed -n 's/^Total Tests: //p')" = 3
+          ctest --test-dir build-owner-tsan --no-tests=error \
+            --output-on-failure --timeout 120 --repeat until-fail:3
+      - name: Preserve exact source, shared DSO and concurrent TSan proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-shared-provider-tsan-lifetime
+          path: |
+            ${{ runner.temp }}/gmssl-provider-tsan-receipt.json
+            build-gmssl-tsan/CMakeCache.txt
+            build-provider-tsan/CMakeCache.txt
+            build-sdk-tsan/Testing/Temporary/LastTest.log
+            build-owner-tsan/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
+ \
             --no-tests=error --output-on-failure --timeout 120 \
             --repeat until-fail:3
       - name: TSan SM3 and TLS common-owner C11 C++17 and 2 DSO modules
