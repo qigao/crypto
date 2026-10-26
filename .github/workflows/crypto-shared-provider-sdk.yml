@@ -124,7 +124,7 @@ jobs:
             echo "Unreviewed GmSSL backend symbol exported by Crypto Provider" >&2
             exit 1
           fi
-          test "$(grep -c ' crypto_tls_' "$RUNNER_TEMP/crypto-provider-exported-symbols.txt")" = 11
+          test "$(grep -c ' crypto_tls_' "$RUNNER_TEMP/crypto-provider-exported-symbols.txt")" = 15
       - name: Upload Provider qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
