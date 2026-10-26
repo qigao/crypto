@@ -1,37 +1,67 @@
 # M3.2.1 — Independent OpenSSL 3 same-session TLS exporter oracle
 
-This qualification follows the public Crypto TLS v1.2 peer/exporter
-API in Draft #21. It tests the **opposite role** from the original
-OpenSSL server interoperability gate:
+**Draft qualification only. Production Crypto and CNet do not link
+OpenSSL, and no native shared-provider ownership model is changed.**
 
-- A separate, independently built installed C11 `Crypto::TLS`
-  executable is the **real TCP/TLS server**. It has no GmSSL header
-  or linker dependency; it imports only the one Crypto shared DSO.
-- OpenSSL 3 `s_client` is the independent TLS client and native
-  exporter implementation; the TLS 1.2 and TLS 1.3 client uses the
-  same RSA leaf fixture and a trusted CA, with explicit cipher and
-  signature algorithms.
-- Both implementations derive
-  `EXPORTER-Channel-Binding` (32 bytes) from the **same TLS session**.
-  Since `openssl s_client -keymatexport` uses the *no context* form,
-  the Crypto server calls `crypto_tls_session_export_v1_2(...,
-  use_context=0)`. This test does not conflate the context-present
-  TLS 1.2 RFC 9266 CNet binding variant; that is tested separately by
-  two actual GmSSL peers with `use_context=1`.
-- Each session additionally must deliver a genuine authenticated
-  HTTP response from the Crypto C11 server to OpenSSL 3.
+## Provenance of the oracle
 
-The server and OpenSSL3 client write raw exporter bytes to **only**
-test-local `.secret` files; a cross-platform bounded subprocess
-compares the exact 64-hex-character values and deletes them. Neither
-exporter material nor the OpenSSL client secret diagnostic file is
-printed or uploaded as a CI artifact. The server does not accept
-external client connections except 127.0.0.1 and has a bounded
-accept/TLS/receive/send lifecycle. Raw fixture private keys are test
-temporary and excluded from upload.
+The original TLS 1.2/1.3 independent OpenSSL3 peer contracts already
+prove that an **installed Crypto C11 client** can complete a real
+authenticated handshake, server SAN/trust validation, `h2` ALPN,
+the exact peer DER/SHA-256 oracle, and HTTP application data against
+an independently implemented OpenSSL 3 server.
 
-This adds Linux/macOS OpenSSL 3 test and Linux sanitizer coverage
-without modifying source-import provenance, the installed C11 API,
-or the one-GmSSL-native-owner design. It does **not** imply
-production CNet mTLS, system root trust, cross-DSO NativeIO BIO parity
-or completed release governance.
+This branch adds a TEST-ONLY reference server compiled from
+`tests/sdk/openssl-exporter-oracle.c`, which links only
+`OpenSSL::SSL` / `OpenSSL::Crypto`, **never Crypto::TLS or GmSSL**.
+The Crypto C11 client still links only the single imported native
+`Crypto::TLS` shared image, **never the OpenSSL library**.
+
+The reference server uses the real OpenSSL 3
+`SSL_export_keying_material()` implementation after `SSL_accept()`.
+The Crypto client uses `crypto_tls_session_export_v1_2()` after its
+real authenticated handshake. They use exactly the **same TCP/TLS
+connection** (one server accepts one client), the same label
+`EXPORTER-Channel-Binding`, output length 32 and *no exporter
+context* (use_context=0). This is the unambiguous OpenSSL CLI/API
+default. The context-present-but-empty RFC 9266 CNet setting
+(use_context=1) remains separately tested with two real native GmSSL
+peers; do not silently conflate the TLS 1.2 semantics.
+
+The test server advertises the existing RSA/ECDHE GCM TLS 1.2 or
+RSA-PSS/AES-GCM TLS 1.3 profile and selects `h2` from the client ALPN
+offered list, then replies to an actual HTTP request.
+Both producer processes independently write their 32 derived bytes
+as exactly 64 uppercase hex characters into private, exclusive
+0600 `.secret` files, **only after valid TLS authentication**.
+The script requires a strict **byte-for-byte** match and a completed
+TLS/HTTP exchange for BOTH protocols. Never print, export,
+artifact-upload, reuse or snapshot raw exporter material.
+Every failure exits nonzero; no skip, xfail, suppression or retry-to-pass.
+
+## Reverse-direction finding remains separate
+
+The earlier experimental `tests/sdk/openssl-server.c` Crypto-server
+vs `openssl s_client -keymatexport` direction failed **before**
+the Crypto server completed a TLS 1.2 handshake, inside the existing
+GmSSL TLS 1.2 ClientKeyExchange/Finished parsing path. OpenSSL
+certificate verification and local exporter availability at the
+client do not establish that the server authenticated/finished.
+
+This reverse-direction incompatibility is **not considered fixed**
+by the reference test above. Its experimental test source remains
+available, with a separate issue tracking a real provider/server-side
+repair and standalone fail-closed qualification. It cannot be used
+as evidence for production CNet server parity.
+
+## CI / release boundary
+
+- Linux/macOS independent installed Crypto C11 client vs OpenSSL 3
+  `SSL_export_keying_material` test server.
+- Linux real GmSSL and shared Crypto source, installed facade and
+  test-only OpenSSL reference executable under ASan/UBSan/LSan.
+- Existing three-OS SDK, original 29 test matrix, single native owner,
+  host DSO cancellation/TSan, ALPN/CA/SAN and peer DER/SHA-256 tests
+  remain required.
+- No production OpenSSL fallback, no source provenance mutation,
+  no changes to `gmssl 3.2.0#13` vcpkg pin or CNet linkage.
