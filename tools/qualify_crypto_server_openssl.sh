@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Independent OpenSSL3 s_client against an actual installed Crypto::TLS
+# Independent OpenSSL3 s_client against an actual installed Salts::Crypto
 # SERVER. Keep the reverse-role gate separate from the already-qualified
 # Crypto-client/OpenSSL-server exporter oracle.
 set -euo pipefail

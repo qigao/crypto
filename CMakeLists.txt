@@ -2,15 +2,33 @@ cmake_minimum_required(VERSION 3.21)
 project(SaltsCrypto VERSION 0.1.0 LANGUAGES C)
 
 # Exactly one installed STATIC archive and one CMake target: Salts::Crypto.
-# GmSSL 3.2 is a pinned source/build input, never a separate SDK library.
-foreach(_input IN ITEMS CRYPTO_GMSSL_SOURCE CRYPTO_GMSSL_STATIC)
-  if(NOT DEFINED ${_input} OR NOT EXISTS "${${_input}}")
-    message(FATAL_ERROR "${_input} must point at the verified patched GmSSL source/archive")
-  endif()
-endforeach()
-if(NOT EXISTS "${CRYPTO_GMSSL_SOURCE}/include/gmssl/tls.h")
-  message(FATAL_ERROR "GmSSL TLS headers missing from verified source")
+# GmSSL source and patches are owned solely by qigao/vcpkg-cache.
+# Consume its exact installed static port; never compile/copy upstream GmSSL
+# sources inside this repository and never ship a second gmssl binary.
+if(NOT DEFINED CRYPTO_GMSSL_ROOT OR
+   NOT EXISTS "${CRYPTO_GMSSL_ROOT}/share/gmssl/GmSSLConfig.cmake")
+  message(FATAL_ERROR
+    "CRYPTO_GMSSL_ROOT must point to a qigao/vcpkg-cache installed gmssl 3.2.0#13 prefix")
 endif()
+file(TO_CMAKE_PATH "${CRYPTO_GMSSL_ROOT}" _gmssl_prefix)
+if(NOT EXISTS "${_gmssl_prefix}/include/gmssl/tls.h" OR
+   NOT EXISTS "${_gmssl_prefix}/include/gmssl/sm3.h")
+  message(FATAL_ERROR "Missing installed GmSSL TLS/SM3 headers")
+endif()
+find_package(GmSSL CONFIG REQUIRED
+  PATHS "${_gmssl_prefix}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+if(NOT TARGET GmSSL::GmSSL)
+  message(FATAL_ERROR "The vcpkg gmssl port must import GmSSL::GmSSL")
+endif()
+get_target_property(_gmssl_archive GmSSL::GmSSL IMPORTED_LOCATION_RELEASE)
+if(NOT _gmssl_archive OR NOT EXISTS "${_gmssl_archive}" OR
+   NOT _gmssl_archive MATCHES "[.](a|lib)$")
+  message(FATAL_ERROR "GmSSL port must contain a real static archive, not a DSO")
+endif()
+get_filename_component(_gmssl_archive "${_gmssl_archive}" REALPATH)
+file(TO_CMAKE_PATH "${_gmssl_archive}" _gmssl_archive)
+# The imported GmSSL target must remain BUILD-PRIVATE. The only installed
+# library target from this project is the combined Salts::Crypto archive.
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Ed448 libecc source uses the reviewed 64-bit WORDSIZE ABI")
 endif()
@@ -44,7 +62,7 @@ target_link_libraries(salts_crypto PUBLIC Threads::Threads)
 target_include_directories(salts_crypto
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-  PRIVATE "${CRYPTO_GMSSL_SOURCE}/include"
+  PRIVATE "${_gmssl_prefix}/include"
           "${_libecc}/include")
 target_compile_definitions(salts_crypto PRIVATE
   ENABLE_TLS ENABLE_SECP256R1 ENABLE_SECP384R1
@@ -72,7 +90,7 @@ endif()
 add_custom_command(TARGET salts_crypto POST_BUILD
   COMMAND "${CMAKE_COMMAND}"
     "-DARCHIVE=$<TARGET_FILE:salts_crypto>"
-    "-DGMSSL_ARCHIVE=${CRYPTO_GMSSL_STATIC}"
+    "-DGMSSL_ARCHIVE=${_gmssl_archive}"
     "-DARCHIVER=${CMAKE_AR}"
     "-DRANLIB=${CMAKE_RANLIB}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/merge_static_crypto.cmake"
@@ -87,7 +105,7 @@ install(DIRECTORY include/crypto
 # no Crypto Provider header, trampoline or independently installed GmSSL lib.
 # Explicitly canonicalize the absolute source path before generating
 # cmake_install.cmake: on Windows GITHUB_WORKSPACE may contain backslashes.
-file(TO_CMAKE_PATH "${CRYPTO_GMSSL_SOURCE}/include/gmssl/sm3.h"
+file(TO_CMAKE_PATH "${_gmssl_prefix}/include/gmssl/sm3.h"
   _crypto_gmssl_sm3_header)
 install(FILES "${_crypto_gmssl_sm3_header}"
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gmssl")

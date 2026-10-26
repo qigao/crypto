@@ -73,7 +73,7 @@ static int acceptable(crypto_tls_result r)
 }
 
 /* DER oracle is the SHA-256 of the frozen public
- * providers/gmssl/tests/fixtures/external-io-server-cert.pem leaf.
+ * tests/fixtures/external-io-server-cert.pem leaf.
  * Generated independently from PEM base64 -> DER -> SHA-256.
  */
 static const uint8_t FROZEN_RSA_LEAF_SHA256[32] = {

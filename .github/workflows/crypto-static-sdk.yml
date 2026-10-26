@@ -1,4 +1,4 @@
-name: Salts Crypto single static archive SDK
+name: Crypto installed GmSSL from vcpkg-cache
 
 on:
   pull_request:
@@ -7,44 +7,45 @@ on:
       - "cmake/**"
       - "src/**"
       - "include/**"
-      - "vendor/libecc/**"
+      - "vendor/**"
       - "tests/**"
-      - "tools/audit_static_crypto.py"
-      - "tools/merge_static_crypto.cmake"
-      - "providers/gmssl/**"
+      - "tools/**"
+      - "vcpkg.json"
       - ".github/workflows/crypto-static-sdk.yml"
+      - "providers/gmssl/**"
   workflow_dispatch:
 
 permissions:
   contents: read
+  packages: read
 
+# qigao/vcpkg-cache is the ONLY GmSSL port/source/patch owner.
+# The action and port identities are pinned; no upstream GmSSL checkout,
+# no local source assembly or Crypto-owned provider source fallback.
 jobs:
   installed-static-sdk:
-    name: "Salts::Crypto static / ${{ matrix.os }}"
-    runs-on: "${{ matrix.os }}"
-    timeout-minutes: 60
+    name: "Salts::Crypto vcpkg SDK / ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025]
+        include:
+          - os: ubuntu-24.04
+            target: linux-x64
+          - os: macos-15
+            target: macos
+          - os: windows-2025
+            target: windows-x64
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@2e214ae44a3e3244eded5db6361194576356fc9e
         with:
-          repository: guanzhi/GmSSL
-          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
-          path: _gmssl-upstream
-          persist-credentials: false
-      - name: Verify and patch exact GmSSL 3.2 sources
+          mode: read
+      - name: Verify and install canonical GmSSL 3.2.0#13 vcpkg port
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/verify_gmssl_import.py
-          test "$(git -C _gmssl-upstream rev-parse HEAD)" = 7c9f02904ef33e59c87b4f16621cc8fd434e7579
-          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
-            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/static-gmssl-source.json" \
-            -P tools/assemble_gmssl.cmake
-      - name: Build private provider source input
+        run: python3 tools/ci/install_vcpkg_gmssl.py ${{ matrix.target }}
+      - name: Build, test and install single Salts::Crypto archive
         shell: bash
         run: |
           set -euo pipefail
@@ -53,37 +54,14 @@ jobs:
           else
             gen=(-G Ninja)
           fi
-          cmake -S _gmssl-upstream -B build-gmssl "${gen[@]}" \
-            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-            -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
-            -DENABLE_SECP384R1=ON -DENABLE_SHA2=ON -DENABLE_AES=ON \
-            -DENABLE_AES_CCM=OFF -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF \
-            -DENABLE_GHASH=OFF -DENABLE_SM9=OFF -DENABLE_CMS=OFF \
-            -DENABLE_LMS=OFF -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF \
-            -DENABLE_KYBER=OFF -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
-          cmake --build build-gmssl --config Release --target gmssl --parallel 2
-      - name: Build and install only Salts::Crypto static archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$RUNNER_OS" == Windows ]]; then
-            gen=(-G 'Visual Studio 18 2026' -A x64)
-            provider="$GITHUB_WORKSPACE/build-gmssl/bin/Release/gmssl.lib"
-          else
-            gen=(-G Ninja)
-            provider="$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
-          fi
-          test -s "$provider"
-          cmake -S . -B build-crypto "${gen[@]}" \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
-            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
-            "-DCRYPTO_GMSSL_STATIC=$provider"
+          cmake -S . -B build-crypto "${gen[@]}" -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON "-DCRYPTO_GMSSL_ROOT=$CRYPTO_GMSSL_ROOT"
           cmake --build build-crypto --config Release --parallel 2
           ctest --test-dir build-crypto -C Release --no-tests=error --output-on-failure
           cmake --install build-crypto --config Release --prefix "$RUNNER_TEMP/crypto-static"
           python3 tools/audit_static_crypto.py \
             --prefix "$RUNNER_TEMP/crypto-static" --report build-crypto/static.json
-      - name: Independent installed C11 and C++17 and real TLS1.2/1.3 + CipherBIO
+      - name: Independent installed C11/C++17, real TLS1.2/1.3, CipherBIO
         shell: bash
         run: |
           set -euo pipefail
@@ -92,7 +70,8 @@ jobs:
             peer=()
           else
             gen=(-G Ninja)
-            peer=(-DCRYPTO_SDK_ENABLE_OPENSSL_PEER=ON -DCRYPTO_SDK_ENABLE_INDEPENDENT_EXPORTER=ON)
+            peer=(-DCRYPTO_SDK_ENABLE_OPENSSL_PEER=ON
+                  -DCRYPTO_SDK_ENABLE_INDEPENDENT_EXPORTER=ON)
             if [[ "$RUNNER_OS" == macOS ]]; then
               root="$(brew --prefix openssl@3)"
               peer+=("-DOPENSSL_ROOT_DIR=$root")
@@ -100,16 +79,18 @@ jobs:
             fi
           fi
           cmake -S tests/owner -B build-owner "${gen[@]}" \
-            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-static"
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-static"
           cmake --build build-owner --config Release --parallel 2
           ctest --test-dir build-owner -C Release --no-tests=error --output-on-failure
           cmake -S tests/sdk -B build-sdk "${gen[@]}" \
-            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-static" \
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-static" \
             -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON "${peer[@]}" \
-            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
+            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/tests/fixtures"
           cmake --build build-sdk --config Release --parallel 2
           ctest --test-dir build-sdk -C Release --no-tests=error --output-on-failure
-      - name: Independent OpenSSL3 CA/SAN and HRR/exporter negative gates
+      - name: Independent OpenSSL3 CA/SAN/HRR/exporter acceptance and negatives
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -124,33 +105,35 @@ jobs:
           bash tools/qualify_crypto_server_api_openssl.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_api_peer_client" "$RUNNER_TEMP/static-peer" 9950
           CRYPTO_TLS_TEST_HRR_ONLY=1 bash tools/qualify_crypto_server_openssl.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" "$RUNNER_TEMP/static-peer" 9920
           bash tools/qualify_crypto_hrr_ccs_negative.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_api_peer_client" "$RUNNER_TEMP/static-peer" 9970
-      - name: Relocation / source-independent import
+      - name: Relocated installed SDK, independent consumer and symbol audit
         shell: bash
         run: |
           set -euo pipefail
           mv "$RUNNER_TEMP/crypto-static" "$RUNNER_TEMP/crypto-relocated"
           cmake -S tests/owner -B build-owner-relocated \
-            "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-relocated" -DCMAKE_BUILD_TYPE=Release
+            "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-relocated" \
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build build-owner-relocated --config Release --parallel 2
-          ctest --test-dir build-owner-relocated -C Release --no-tests=error --output-on-failure
+          ctest --test-dir build-owner-relocated -C Release \
+            --no-tests=error --output-on-failure
           python3 tools/audit_static_crypto.py \
             --prefix "$RUNNER_TEMP/crypto-relocated" --report build-crypto/relocated.json
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: crypto-static-${{ matrix.os }}
+          name: crypto-vcpkg-static-${{ matrix.os }}
+          if-no-files-found: warn
           path: |
             build-crypto/static.json
             build-crypto/relocated.json
             build-crypto/Testing/Temporary/LastTest.log
             build-sdk/Testing/Temporary/LastTest.log
             build-owner/Testing/Temporary/LastTest.log
-          if-no-files-found: warn
 
-  linux-source-sanitizers:
-    name: "Static Crypto source ${{ matrix.mode }}"
+  facade-sanitizers:
+    name: "Static Crypto facade ${{ matrix.mode }} (installed GmSSL)"
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -161,21 +144,13 @@ jobs:
       LSAN_OPTIONS: exitcode=23
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@2e214ae44a3e3244eded5db6361194576356fc9e
         with:
-          repository: guanzhi/GmSSL
-          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
-          path: _gmssl-upstream
-          persist-credentials: false
-      - name: Assemble source and verify provenance
+          mode: read
+      - name: Verify and install GmSSL exclusively from vcpkg-cache
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/verify_gmssl_import.py
-          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
-            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/source-sanitized.json" \
-            -P tools/assemble_gmssl.cmake
-      - name: Fully instrument provider, archive, and installed C11 consumer
+        run: python3 tools/ci/install_vcpkg_gmssl.py linux-x64
+      - name: Instrument Crypto sources and independent installed consumer
         shell: bash
         run: |
           set -euo pipefail
@@ -184,22 +159,13 @@ jobs:
           else
             flags="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
           fi
-          cmake -S _gmssl-upstream -B build-gmssl -G Ninja \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS=$flags" \
-            -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
-            -DENABLE_TLS=ON -DENABLE_SECP256R1=ON -DENABLE_SECP384R1=ON \
-            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
-            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
-            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
-            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
-            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
-          cmake --build build-gmssl --target gmssl --parallel 2
+          # This instruments Crypto+libecc, not the prebuilt GmSSL vcpkg
+          # archive. Do not claim a fully source-instrumented GmSSL gate.
           cmake -S . -B build-crypto -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON \
             "-DCMAKE_C_FLAGS=$flags" "-DCMAKE_CXX_FLAGS=$flags" \
             "-DCMAKE_EXE_LINKER_FLAGS=$flags" \
-            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
-            "-DCRYPTO_GMSSL_STATIC=$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
+            "-DCRYPTO_GMSSL_ROOT=$CRYPTO_GMSSL_ROOT"
           cmake --build build-crypto --parallel 2
           ctest --test-dir build-crypto --no-tests=error --output-on-failure \
             --timeout 120 --repeat until-fail:3
@@ -213,24 +179,24 @@ jobs:
             -DCRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE=ON \
             -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON \
             -DCRYPTO_SDK_ENABLE_CIPHER_BIO_RACE=ON \
-            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
+            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/tests/fixtures"
           cmake --build build-sdk --parallel 2
           ctest --test-dir build-sdk --no-tests=error --output-on-failure \
             --timeout 120 --repeat until-fail:3
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: crypto-source-${{ matrix.mode }}
+          name: crypto-vcpkg-facade-${{ matrix.mode }}
+          if-no-files-found: warn
           path: |
             build-crypto/static.json
             build-crypto/Testing/Temporary/LastTest.log
             build-sdk/Testing/Temporary/LastTest.log
-          if-no-files-found: warn
 
   mobile-installed-static-sdk:
-    name: "Salts::Crypto installed / ${{ matrix.target }}"
+    name: "Salts::Crypto vcpkg SDK / ${{ matrix.target }}"
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -241,28 +207,20 @@ jobs:
             os: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@2e214ae44a3e3244eded5db6361194576356fc9e
         with:
-          repository: guanzhi/GmSSL
-          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
-          path: _gmssl-upstream
-          persist-credentials: false
-      - name: Assemble exact pinned GmSSL source
+          mode: read
+      - name: Verify and install exact GmSSL vcpkg target SDK
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/verify_gmssl_import.py
-          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
-            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/mobile-source.json" \
-            -P tools/assemble_gmssl.cmake
-      - name: Cross build, install and audit one static Crypto archive
+        run: python3 tools/ci/install_vcpkg_gmssl.py ${{ matrix.target }}
+      - name: Cross build and audit sole Crypto installed static archive
         shell: bash
         run: |
           set -euo pipefail
           cross=()
           exe_link=OFF
           if [[ "${{ matrix.target }}" == android-arm64 ]]; then
-            : "${ANDROID_NDK_HOME:?Android NDK is required}"
+            : "${ANDROID_NDK_HOME:?Android NDK required}"
             cross+=("-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
                     "-DANDROID_ABI=arm64-v8a" "-DANDROID_PLATFORM=android-26")
             exe_link=ON
@@ -272,29 +230,14 @@ jobs:
                     -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY)
           fi
           common=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
-          cmake -S _gmssl-upstream -B build-gmssl -G Ninja "${cross[@]}" "${common[@]}" \
-            -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON \
-            -DENABLE_SECP256R1=ON -DENABLE_SECP384R1=ON \
-            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_SHA1=ON \
-            -DENABLE_AES_CCM=OFF -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
-            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
-            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
-            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
-          cmake --build build-gmssl --config Release --target gmssl --parallel 2
-          provider="$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
-          test -s "$provider"
           cmake -S . -B build-crypto -G Ninja "${cross[@]}" "${common[@]}" \
-            -DBUILD_TESTING=OFF \
-            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
-            "-DCRYPTO_GMSSL_STATIC=$provider"
+            -DBUILD_TESTING=OFF "-DCRYPTO_GMSSL_ROOT=$CRYPTO_GMSSL_ROOT"
           cmake --build build-crypto --config Release --parallel 2
           prefix="$RUNNER_TEMP/crypto-mobile-installed"
           cmake --install build-crypto --config Release --prefix "$prefix"
           test -s "$prefix/lib/libsalts_crypto.a"
           test -s "$prefix/lib/cmake/Crypto/CryptoConfig.cmake"
           if [[ "${{ matrix.target }}" == android-arm64 ]]; then
-            # GNU host nm may not understand AArch64 objects: use the pinned
-            # Android NDK LLVM toolchain for the existing uniqueness audit.
             llvm_nm="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
             test -x "$llvm_nm"
             mkdir -p "$RUNNER_TEMP/crypto-audit-bin"
@@ -303,16 +246,13 @@ jobs:
           fi
           python3 tools/audit_static_crypto.py \
             --prefix "$prefix" --report build-crypto/mobile-static.json
-          cmake -S tests/mobile -B build-mobile -G Ninja \
-            "${cross[@]}" "${common[@]}" \
-            "-DCRYPTO_SDK_ROOT=$prefix" \
+          cmake -S tests/mobile -B build-mobile -G Ninja "${cross[@]}" \
+            "${common[@]}" "-DCRYPTO_SDK_ROOT=$prefix" \
             "-DCRYPTO_MOBILE_EXE_LINK_TESTS=$exe_link"
           cmake --build build-mobile --config Release --parallel 2
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: crypto-mobile-${{ matrix.target }}
-          path: |
-            build-crypto/mobile-static.json
-            build-crypto/Testing/Temporary/LastTest.log
+          name: crypto-vcpkg-mobile-${{ matrix.target }}
           if-no-files-found: warn
+          path: build-crypto/mobile-static.json

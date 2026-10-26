@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Real OpenSSL 3 network peer for the *installed Crypto C11 shared facade*.
+# Real OpenSSL 3 network peer for the *installed Crypto C11 static facade*.
 # OpenSSL is a test peer/certificate oracle, NEVER a runtime TLS fallback.
 set -euo pipefail
 
