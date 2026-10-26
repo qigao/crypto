@@ -63,7 +63,7 @@ for protocol in 12 13; do
   port="$((base_port + protocol - 12))"
   options=(-accept "127.0.0.1:$port"
     -cert "$work/leaf.pem" -key "$work/leaf-key.pem"
-    -cert_chain "$work/ca.pem" -www -quiet)
+    -cert_chain "$work/ca.pem" -www -quiet -alpn "h2,http/1.1")
   if [[ "$protocol" == 12 ]]; then
     options+=(-tls1_2 -cipher ECDHE-RSA-AES128-GCM-SHA256
       -sigalgs rsa_pkcs1_sha256)
