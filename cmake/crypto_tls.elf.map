@@ -18,5 +18,13 @@ CRYPTO_TLS_1 {
     crypto_tls_session_shutdown;
     crypto_tls_session_cancel;
     crypto_tls_session_destroy;
-  local: *;
 } CRYPTO_PROVIDER_0_1;
+
+CRYPTO_TLS_EXT_1_1 {
+  global:
+    crypto_tls_extension_abi_version;
+    crypto_tls_get_features_v1_1;
+    crypto_tls_session_set_alpn_v1_1;
+    crypto_tls_session_get_info_v1_1;
+  local: *;
+} CRYPTO_TLS_1;
