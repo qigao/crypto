@@ -11,6 +11,7 @@ on:
       - "tests/sdk/CMakeLists.txt"
       - "tools/qualify_crypto_shared_openssl.sh"
       - "tools/qualify_crypto_exporter_openssl.sh"
+      - "tools/qualify_crypto_server_openssl.sh"
       - "tools/assemble_gmssl.cmake"
       - "providers/gmssl/hardening/**"
       - "providers/gmssl/patches/**"
@@ -70,6 +71,7 @@ jobs:
           set -euo pipefail
           cmake -S . -B build-provider -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE=ON \
             "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
             "-DCRYPTO_GMSSL_STATIC=$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
           cmake --build build-provider --parallel 2
@@ -113,6 +115,9 @@ jobs:
             "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_client" \
             "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_exporter_oracle" \
             "$RUNNER_TEMP/crypto-shared-peer" 9830
+          bash tools/qualify_crypto_server_openssl.sh \
+            "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" \
+            "$RUNNER_TEMP/crypto-shared-peer" 9900
       - name: Upload independent test evidence without private keys
         if: always()
         uses: actions/upload-artifact@v4
