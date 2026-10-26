@@ -1,153 +1,115 @@
 cmake_minimum_required(VERSION 3.21)
-project(CryptoTLS VERSION 0.1.0 LANGUAGES C)
+project(SaltsCrypto VERSION 0.1.0 LANGUAGES C)
 
-# The GmSSL source is assembled in a separate, exact-SHA checkout by the
-# provenance gate. This project does not fetch sources or export GmSSLConfig.
-if(NOT DEFINED CRYPTO_GMSSL_SOURCE OR
-   NOT EXISTS "${CRYPTO_GMSSL_SOURCE}/include/gmssl/tls.h")
-  message(FATAL_ERROR "CRYPTO_GMSSL_SOURCE must be the verified patched checkout")
+# Exactly one installed STATIC archive and one CMake target: Salts::Crypto.
+# GmSSL 3.2 is a pinned source/build input, never a separate SDK library.
+foreach(_input IN ITEMS CRYPTO_GMSSL_SOURCE CRYPTO_GMSSL_STATIC)
+  if(NOT DEFINED ${_input} OR NOT EXISTS "${${_input}}")
+    message(FATAL_ERROR "${_input} must point at the verified patched GmSSL source/archive")
+  endif()
+endforeach()
+if(NOT EXISTS "${CRYPTO_GMSSL_SOURCE}/include/gmssl/tls.h")
+  message(FATAL_ERROR "GmSSL TLS headers missing from verified source")
 endif()
-if(NOT DEFINED CRYPTO_GMSSL_STATIC OR
-   NOT EXISTS "${CRYPTO_GMSSL_STATIC}")
-  message(FATAL_ERROR "CRYPTO_GMSSL_STATIC must be its real compiled PIC static library")
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+  message(FATAL_ERROR "Ed448 libecc source uses the reviewed 64-bit WORDSIZE ABI")
 endif()
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
-add_library(PrivateGmSSL STATIC IMPORTED)
-set_target_properties(PrivateGmSSL PROPERTIES
-  IMPORTED_LOCATION "${CRYPTO_GMSSL_STATIC}"
-  INTERFACE_INCLUDE_DIRECTORIES "${CRYPTO_GMSSL_SOURCE}/include")
+include(CTest)
+find_package(Threads REQUIRED)
 
-add_library(CryptoTLSProvider SHARED src/crypto_tls_gmssl.c src/provider_sm3.c)
-add_library(Crypto::TLS ALIAS CryptoTLSProvider)
-set_target_properties(CryptoTLSProvider PROPERTIES
-  OUTPUT_NAME crypto_tls
-  EXPORT_NAME TLS
-  C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO
-  C_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES
-  POSITION_INDEPENDENT_CODE YES
-  VERSION ${PROJECT_VERSION} SOVERSION 0)
-target_include_directories(CryptoTLSProvider
-  PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-target_compile_definitions(CryptoTLSProvider PRIVATE
-  CRYPTO_TLS_BUILD_DLL=1
-  CRYPTO_PROVIDER_BUILDING=1
+set(_libecc "${CMAKE_CURRENT_SOURCE_DIR}/vendor/libecc")
+file(GLOB _arith CONFIGURE_DEPENDS
+  "${_libecc}/src/fp/fp*.c" "${_libecc}/src/nn/n*.c")
+file(GLOB _curves CONFIGURE_DEPENDS "${_libecc}/src/curves/*.c")
+set(_ed448_sources ${_arith} ${_curves}
+  "${_libecc}/src/hash/hash_algs.c"
+  "${_libecc}/src/hash/shake.c"
+  "${_libecc}/src/hash/shake256.c"
+  "${_libecc}/src/sig/ec_key.c"
+  "${_libecc}/src/sig/eddsa.c"
+  "${_libecc}/src/sig/sig_algs.c"
+  "${_libecc}/src/utils/utils.c")
+
+# No separate libecc archive; only its required Ed448 code is compiled.
+# SHA256 is the existing, pinned GmSSL implementation, not a duplicate libecc SHA.
+add_library(salts_crypto STATIC
+  src/provider_sm3.c
+  src/crypto_tls_gmssl.c
+  src/crypto_tls_cipher_bio.c
+  src/crypto_ed448.c
+  src/crypto_sha256.c
+  src/crypto_random.c
+  ${_ed448_sources})
+add_library(Salts::Crypto ALIAS salts_crypto)
+set_target_properties(salts_crypto PROPERTIES
+  OUTPUT_NAME salts_crypto EXPORT_NAME Crypto
+  C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+  POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+target_compile_features(salts_crypto PUBLIC c_std_11)
+target_link_libraries(salts_crypto PUBLIC Threads::Threads)
+target_include_directories(salts_crypto
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE "${CRYPTO_GMSSL_SOURCE}/include"
+          "${_libecc}/include")
+target_compile_definitions(salts_crypto PRIVATE
   ENABLE_TLS ENABLE_SECP256R1 ENABLE_SECP384R1
   ENABLE_SHA1 ENABLE_SHA2 ENABLE_AES)
-target_link_libraries(CryptoTLSProvider PRIVATE PrivateGmSSL)
 
-# Test-only, private TLS handshake metadata. Never enable in an installed
-# production/provider build and NEVER disclose TLS record contents or keys.
-option(CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE
-  "Emit bounded TLS state/type/length diagnostics on handshake failure" OFF)
-if(CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE)
-  target_compile_definitions(CryptoTLSProvider PRIVATE
-    CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE=1)
-endif()
-
-
-# One physical shared image owns the private GmSSL archive. The SM3
-# Crypto::Provider CMake view is an INTERFACE alias of Crypto::TLS, not a
-# second SHARED/STATIC binary. Export both views from one target set.
-add_library(CryptoProviderView INTERFACE)
-add_library(Crypto::Provider ALIAS CryptoProviderView)
-set_target_properties(CryptoProviderView PROPERTIES EXPORT_NAME Provider)
-target_link_libraries(CryptoProviderView INTERFACE CryptoTLSProvider)
+# Preserve the proven RFC8032 Ed448-only private libecc configuration.
+# No SHA256/SM3 libecc implementation or alternate RNG export is enabled.
+set_source_files_properties(src/crypto_ed448.c ${_ed448_sources}
+  PROPERTIES COMPILE_DEFINITIONS
+  "WITH_STDLIB;WITH_LIBECC_CONFIG_OVERRIDE;WITH_CURVE_WEI448;WITH_HASH_SHAKE256;WITH_SIG_EDDSA448;WORDSIZE=64")
 
 if(MSVC)
-  # MSVC C11 stdatomic.h remains an explicit opt-in on VS 2026. Use
-  # standard lock-free C atomics, not a C++ runtime or unsafe emulation.
-  target_compile_options(CryptoTLSProvider PRIVATE /experimental:c11atomics)
-endif()
-
-if(WIN32)
-  # Only explicitly marked CRYPTO_TLS_API functions may be exported. The
-  # imported GmSSL static archive must not become a second public ABI.
-  set_target_properties(CryptoTLSProvider PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
-  target_link_libraries(CryptoTLSProvider PRIVATE Ws2_32)
+  target_compile_options(salts_crypto PRIVATE /experimental:c11atomics)
+  target_link_libraries(salts_crypto PUBLIC bcrypt ws2_32)
+elseif(WIN32)
+  target_link_libraries(salts_crypto PUBLIC bcrypt ws2_32)
 elseif(APPLE)
-  target_link_libraries(CryptoTLSProvider PRIVATE "-framework Security")
-  target_link_options(CryptoTLSProvider PRIVATE
-    "LINKER:-exported_symbols_list,${PROJECT_SOURCE_DIR}/cmake/crypto_tls.macos.exports")
+  target_link_libraries(salts_crypto PUBLIC "-framework Security")
 elseif(UNIX)
-  target_link_libraries(CryptoTLSProvider PRIVATE m "${CMAKE_DL_LIBS}")
-  target_link_options(CryptoTLSProvider PRIVATE
-    "LINKER:--version-script=${PROJECT_SOURCE_DIR}/cmake/crypto_tls.elf.map"
-    "LINKER:--exclude-libs,ALL")
+  target_link_libraries(salts_crypto PUBLIC m "${CMAKE_DL_LIBS}")
 endif()
 
-# Host loader owns only explicit OS dynamic-library references and lease
-# control blocks; it never links or embeds GmSSL nor the Crypto TLS DSO.
-add_library(CryptoTLSHost STATIC src/crypto_tls_loader.c)
-add_library(Crypto::TLSHost ALIAS CryptoTLSHost)
-set_target_properties(CryptoTLSHost PROPERTIES
-  OUTPUT_NAME crypto_tls_host EXPORT_NAME TLSHost
-  C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO
-  POSITION_INDEPENDENT_CODE YES)
-target_include_directories(CryptoTLSHost PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-if(MSVC)
-  target_compile_options(CryptoTLSHost PRIVATE /experimental:c11atomics)
-endif()
-if(WIN32)
-  target_link_libraries(CryptoTLSHost PUBLIC Kernel32)
-elseif(UNIX)
-  target_link_libraries(CryptoTLSHost PUBLIC "${CMAKE_DL_LIBS}")
-endif()
+# Fold ALL compiled native GmSSL objects into this one installed archive.
+# PrivateGmSSL is neither an installed/imported target nor a consumer dependency.
+add_custom_command(TARGET salts_crypto POST_BUILD
+  COMMAND "${CMAKE_COMMAND}"
+    "-DARCHIVE=$<TARGET_FILE:salts_crypto>"
+    "-DGMSSL_ARCHIVE=${CRYPTO_GMSSL_STATIC}"
+    "-DARCHIVER=${CMAKE_AR}"
+    "-DRANLIB=${CMAKE_RANLIB}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/merge_static_crypto.cmake"
+  VERBATIM)
 
-# Pure C11, host-side, fixed ciphertext BIO. It owns only two bounded
-# buffers and borrowed Crypto TLS callback descriptors: NO GmSSL/static TLS,
-# no native sockets, no CNet/Salts dependency and no extra native shared DSO.
-add_library(CryptoTLSCipherBIO STATIC src/crypto_tls_cipher_bio.c)
-add_library(Crypto::TLSCipherBIO ALIAS CryptoTLSCipherBIO)
-set_target_properties(CryptoTLSCipherBIO PROPERTIES
-  OUTPUT_NAME crypto_tls_cipher_bio EXPORT_NAME TLSCipherBIO
-  C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO
-  POSITION_INDEPENDENT_CODE YES)
-target_include_directories(CryptoTLSCipherBIO PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-if(MSVC)
-  target_compile_options(CryptoTLSCipherBIO PRIVATE /experimental:c11atomics)
-endif()
-
-install(TARGETS CryptoTLSProvider CryptoTLSHost CryptoTLSCipherBIO CryptoProviderView
-  EXPORT CryptoTLSTargets
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+install(TARGETS salts_crypto EXPORT SaltsCryptoTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES include/crypto/tls.h include/crypto/tls_ext.h include/crypto/tls_peer.h include/crypto/cipher_bio.h include/crypto/loader.h include/crypto/provider.h
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/crypto)
-install(EXPORT CryptoTLSTargets
-  NAMESPACE Crypto:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
-configure_package_config_file(
-  cmake/CryptoTLSConfig.cmake.in
-  "${CMAKE_CURRENT_BINARY_DIR}/CryptoTLSConfig.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
-write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/CryptoTLSConfigVersion.cmake"
-  VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
-install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/CryptoTLSConfig.cmake"
-  "${CMAKE_CURRENT_BINARY_DIR}/CryptoTLSConfigVersion.cmake"
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
+install(DIRECTORY include/crypto include/salts
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  FILES_MATCHING PATTERN "*.h")
+install(FILES "${_libecc}/LICENSE"
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/Crypto/libecc)
 
-# The Crypto package exposes a provider-neutral SM3 interface view over the
-# exact same physical crypto_tls DLL/dylib/so imported by CryptoTLSConfig.
-# Do not install a second GmSSL-bearing crypto_provider image.
-configure_package_config_file(
-  cmake/CryptoConfig.cmake.in
+set(_package_dir "${CMAKE_INSTALL_LIBDIR}/cmake/Crypto")
+install(EXPORT SaltsCryptoTargets FILE CryptoTargets.cmake
+  NAMESPACE Salts:: DESTINATION "${_package_dir}")
+configure_package_config_file(cmake/CryptoConfig.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/CryptoConfig.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Crypto)
+  INSTALL_DESTINATION "${_package_dir}")
 write_basic_package_version_file(
   "${CMAKE_CURRENT_BINARY_DIR}/CryptoConfigVersion.cmake"
   VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
 install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/CryptoConfig.cmake"
   "${CMAKE_CURRENT_BINARY_DIR}/CryptoConfigVersion.cmake"
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Crypto)
+  DESTINATION "${_package_dir}")
+
+if(BUILD_TESTING)
+  enable_language(CXX)
+  add_subdirectory(tests/algorithms)
+endif()

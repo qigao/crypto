@@ -4,17 +4,7 @@
 /* Pre-stable C11 ABI 0.1. GmSSL internals never cross this boundary. */
 #include <stddef.h>
 #include <stdint.h>
-#if defined(_WIN32)
-# if defined(CRYPTO_PROVIDER_BUILDING)
-#  define CRYPTO_PROVIDER_API __declspec(dllexport)
-# else
-#  define CRYPTO_PROVIDER_API __declspec(dllimport)
-# endif
-#elif defined(__GNUC__) || defined(__clang__)
-# define CRYPTO_PROVIDER_API __attribute__((visibility("default")))
-#else
-# define CRYPTO_PROVIDER_API
-#endif
+#define CRYPTO_PROVIDER_API
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,23 +1,45 @@
-# Crypto — native C11 provider platform (bootstrap)
+# Crypto — one static native owner
 
-This repository is the intended owner of the native cryptography and TLS
-provider implementation used by SaltsCore, CNet and other consumers.
+qigao/crypto is the single source and installed package owner for native
+cryptographic algorithms and TLS functionality. It delivers exactly one
+static archive and one CMake target:
 
-**Current phase: provider-source migration, NOT a released Crypto ABI.**
-The historical GmSSL `3.2.0#13` source adaptations and test corpus are
-being imported from [qigao/vcpkg-cache](https://github.com/qigao/vcpkg-cache)
-under a provenance-locked Draft PR. Its vcpkg registry tree and
-production consumers remain unchanged until the standalone provider is
-assembled, independently qualified and installed.
+~~~cmake
+find_package(Crypto 0.1 CONFIG REQUIRED)
+target_link_libraries(application PRIVATE Salts::Crypto)
+~~~
 
-Planned boundaries:
+No alternative target namespace, provider DSO, TLSHost binary, libecc library,
+separately installed GmSSL archive, or compatibility target is published.
+Missing verified input fails at configure time.
 
-- Crypto controls cryptographic primitives, opaque TLS/X.509 provider
-  sessions, identity and failure/cancellation/DSO lifetime contracts.
-- `vcpkg-cache` controls provider packaging, registry versions, cache
-  metadata and package-consumer build verification.
-- Salts/CNet consume the Crypto provider through one binary owner,
-  **never** embedding duplicate GmSSL state in another module.
+The archive combines pinned reviewed GmSSL 3.2 source (TLS1.2/1.3, X.509,
+SM2, SM3, SHA and ciphers), C11 TLS facade, bounded CipherBIO, and migrated
+SHA256 and Ed448 APIs formerly built by SaltsUtils. The Ed448-required
+libecc WEI448 arithmetic and SHAKE256 are compiled privately. The redundant
+libecc SHA256 and unsafe pseudo-random generator are deleted; native random
+bytes come from the one OS CSPRNG implementation.
 
-See [vcpkg-cache #207](https://github.com/qigao/vcpkg-cache/issues/207)
-and [staged source kit PR #208](https://github.com/qigao/vcpkg-cache/pull/208).
+## Build inputs
+
+A provenance-verified patched GmSSL checkout and its build-only PIC
+libgmssl.a or gmssl.lib must be supplied as CRYPTO_GMSSL_SOURCE and
+CRYPTO_GMSSL_STATIC; the project never fetches or substitutes providers.
+The build merges those input objects into libsalts_crypto.a (or salts_crypto.lib
+on Windows); the staging GmSSL archive is not installed or exported.
+
+The installed CryptoTargets.cmake exports only Salts::Crypto.
+The public headers are include/crypto and include/salts/crypto.h.
+libecc's dual-license notice is preserved with the SDK; its headers remain private.
+
+## Required exact-head acceptance
+
+The crypto-static-sdk.yml pipeline covers installed C11 and C++17 consumers,
+SHA256/SM3/Ed448 RFC vectors, real TLS1.2/1.3 and independent OpenSSL3 peers,
+CipherBIO, relocated SDK, single static archive and symbol audits, and fully
+source-instrumented ASan/UBSan/LSan and TSan. Migration to static packaging
+does not constitute production CNet TLS cutover and does not change the
+GmSSL 3.2.0#13 production registry pin. Both remain separately gated.
+
+The old dynamic Provider/Host/DSO architecture has been removed, with no
+compatibility shims or provider fallbacks.

@@ -2,9 +2,9 @@
 
 **Draft only. Not a production CNet replacement.**
 
-This stage adds a host-only C11 `Crypto::TLSCipherBIO` static helper
+This stage adds a host-only C11 `Salts::TLSCipherBIO` static helper
 (`<crypto/cipher_bio.h>`) alongside the existing single native shared
-`Crypto::TLS` DSO. The helper embeds **no GmSSL implementation**, does not
+`Salts::TLS` DSO. The helper embeds **no GmSSL implementation**, does not
 load a second crypto DSO, and has no native sockets, persistence, Salts,
 CMeta, CFlow, NativeIO or C++ dependency.
 
@@ -69,9 +69,9 @@ TLS 1.2 and TLS 1.3 sessions**:
 - TLS session destruction precedes BIO lease release and terminal free.
 
 CI runs the test on Linux/macOS/Windows with the one imported
-`Crypto::TLS` DSO and also under fully source-instrumented
+`Salts::TLS` DSO and also under fully source-instrumented
 ASan/UBSan/LSan and repeated TSan. The target is installed as
-`Crypto::TLSCipherBIO` and does not alter the **23-symbol** public
+`Salts::TLSCipherBIO` and does not alter the **23-symbol** public
 Crypto TLS+SM3 shared ABI or its SONAME.
 
 ## Explicit remaining gates before CNet cutover
