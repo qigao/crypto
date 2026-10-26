@@ -39,6 +39,14 @@ def inspect(prefix: Path) -> dict:
     for p in prefix.rglob("*"):
         if p.is_file() and re.search(r"\.so\.[0-9]+", p.name):
             raise ValueError("forbidden versioned shared library: " + str(p))
+    # The installed SDK only publishes crypto/* headers; no compatibility
+    # include/salts/crypto.h may be installed.
+    headers = prefix / "include" / "crypto"
+    for name in ("status.h", "sha256.h", "ed448.h"):
+        if not (headers / name).is_file():
+            raise ValueError("missing canonical installed Crypto header: " + name)
+    if (prefix / "include" / "salts" / "crypto.h").exists():
+        raise ValueError("noncanonical salts/crypto.h header in installed SDK")
     cfg = lib / "cmake" / "Crypto" / "CryptoTargets.cmake"
     if not cfg.is_file():
         raise ValueError("missing installed CryptoTargets.cmake")

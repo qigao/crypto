@@ -81,7 +81,7 @@ add_custom_command(TARGET salts_crypto POST_BUILD
 
 install(TARGETS salts_crypto EXPORT SaltsCryptoTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(DIRECTORY include/crypto include/salts
+install(DIRECTORY include/crypto
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   FILES_MATCHING PATTERN "*.h")
 install(FILES "${_libecc}/LICENSE"

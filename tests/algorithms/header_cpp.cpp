@@ -1,4 +1,5 @@
-#include <salts/crypto.h>
+#include <crypto/sha256.h>
+#include <crypto/ed448.h>
 
 #include <cstddef>
 #include <cstdint>
