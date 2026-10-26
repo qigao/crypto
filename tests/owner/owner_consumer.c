@@ -1,6 +1,7 @@
 #include <crypto/provider.h>
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
+#include <crypto/tls_peer.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -36,6 +37,7 @@ int main(void) {
     get_marker_t mark_a=NULL,mark_b=NULL;
     get_tls_marker_t tls_a=NULL,tls_b=NULL;
     get_tls_marker_t ext_a=NULL,ext_b=NULL;
+    get_tls_marker_t peer_a=NULL,peer_b=NULL;
     works_t work_a=NULL,work_b=NULL;
     void *raw=NULL;
     if(!a||!b) {
@@ -57,17 +59,24 @@ int main(void) {
     memcpy(&ext_a,&raw,sizeof(ext_a));
     raw=probe_symbol(b,"crypto_probe_tls_extension_marker");
     memcpy(&ext_b,&raw,sizeof(ext_b));
+    raw=probe_symbol(a,"crypto_probe_tls_peer_marker");
+    if(sizeof(raw)!=sizeof(peer_a)) { probe_close(b);probe_close(a);return 7; }
+    memcpy(&peer_a,&raw,sizeof(peer_a));
+    raw=probe_symbol(b,"crypto_probe_tls_peer_marker");
+    memcpy(&peer_b,&raw,sizeof(peer_b));
     raw=probe_symbol(a,"crypto_probe_works");
     memcpy(&work_a,&raw,sizeof(work_a));
     raw=probe_symbol(b,"crypto_probe_works");
     memcpy(&work_b,&raw,sizeof(work_b));
-    if(!mark_a||!mark_b||!tls_a||!tls_b||!ext_a||!ext_b||!work_a||!work_b ||
+    if(!mark_a||!mark_b||!tls_a||!tls_b||!ext_a||!ext_b||!peer_a||!peer_b||!work_a||!work_b ||
        mark_a()!=mark_b() ||
        mark_a()!=&crypto_provider_abi_0_1_required ||
        tls_a()!=tls_b() ||
        tls_a()!=&crypto_tls_abi_version ||
        ext_a()!=ext_b() ||
        ext_a()!=&crypto_tls_extension_abi_version ||
+       peer_a()!=peer_b() ||
+       peer_a()!=&crypto_tls_peer_abi_version ||
        !work_a()||!work_b()) {
       fprintf(stderr,"two native modules resolved different Provider ABI owners\n");
       probe_close(b);probe_close(a);return 4;
