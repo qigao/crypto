@@ -27,6 +27,11 @@ TLS_EXPORTS = {
     "crypto_tls_get_features_v1_1",
     "crypto_tls_session_set_alpn_v1_1",
     "crypto_tls_session_get_info_v1_1",
+    "crypto_tls_peer_abi_version",
+    "crypto_tls_peer_features_v1_2",
+    "crypto_tls_session_copy_peer_chain_v1_2",
+    "crypto_tls_session_peer_sha256_v1_2",
+    "crypto_tls_session_export_v1_2",
 }
 SM3_EXPORTS = {
     "crypto_provider_abi_0_1_required",
@@ -34,7 +39,7 @@ SM3_EXPORTS = {
     "crypto_provider_sm3",
 }
 EXPECTED = TLS_EXPORTS | SM3_EXPORTS
-ELF_VERSIONS = {"CRYPTO_TLS_1", "CRYPTO_TLS_EXT_1_1", "CRYPTO_PROVIDER_0_1"}
+ELF_VERSIONS = {"CRYPTO_TLS_1", "CRYPTO_TLS_EXT_1_1", "CRYPTO_TLS_PEER_1_2", "CRYPTO_PROVIDER_0_1"}
 
 
 def cmd(*args: str) -> str:
@@ -158,7 +163,7 @@ def audit(prefix: Path, build: Path) -> dict:
     exports = native_exports(provider, osname, pe_tool)
     if exports != EXPECTED:
         raise ValueError(
-            f"expected only 18 SM3/TLS public exports, "
+            f"expected only 23 SM3/TLS public exports, "
             f"missing={sorted(EXPECTED - exports)}, "
             f"unexpected={sorted(exports - EXPECTED)}"
         )
