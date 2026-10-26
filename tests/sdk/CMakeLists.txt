@@ -83,6 +83,12 @@ if(CRYPTO_SDK_ENABLE_OPENSSL_PEER)
   set_target_properties(crypto_sdk_openssl_client PROPERTIES
     C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
   target_link_libraries(crypto_sdk_openssl_client PRIVATE Crypto::TLS)
+  # Test-only REAL Crypto TLS socket server. OpenSSL3 s_client will obtain
+  # its own exporter bytes from the SAME connection for an independent oracle.
+  add_executable(crypto_sdk_openssl_server openssl-server.c)
+  set_target_properties(crypto_sdk_openssl_server PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+  target_link_libraries(crypto_sdk_openssl_server PRIVATE Crypto::TLS)
 endif()
 
 # Host-side lease tests intentionally link ONLY the installed static
