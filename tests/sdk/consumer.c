@@ -1,6 +1,7 @@
 /* Installed SDK consumer. NO GmSSL header, linker target, or source access. */
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
+#include <crypto/tls_peer.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -71,6 +72,126 @@ static int acceptable(crypto_tls_result r)
     return r == CRYPTO_TLS_OK || r == CRYPTO_TLS_AGAIN;
 }
 
+/* DER oracle is the SHA-256 of the frozen public
+ * providers/gmssl/tests/fixtures/external-io-server-cert.pem leaf.
+ * Generated independently from PEM base64 -> DER -> SHA-256.
+ */
+static const uint8_t FROZEN_RSA_LEAF_SHA256[32] = {
+    0x84,0x12,0xcb,0xa2,0xb9,0xac,0x94,0xa9,
+    0x36,0x2f,0xb6,0xb5,0x8d,0x77,0x4c,0xd8,
+    0x72,0x7b,0x8d,0x67,0x0b,0xb9,0xce,0xc2,
+    0x1e,0xa8,0x4f,0xf5,0x9b,0xb7,0x95,0x1a
+};
+
+static int validate_peer_and_exporter(crypto_tls_session *client,
+                                      crypto_tls_session *server,
+                                      uint32_t protocol)
+{
+    uint8_t chain[CRYPTO_TLS_PEER_CHAIN_MAX_BYTES];
+    uint8_t sha[CRYPTO_TLS_PEER_SHA256_BYTES];
+    uint8_t absent[CRYPTO_TLS_PEER_SHA256_BYTES];
+    uint8_t binding_client[32], binding_server[32];
+    uint8_t repeat[32], no_context[32], changed_context[32], changed_label[32];
+    uint8_t untouched[CRYPTO_TLS_EXPORTER_MAX_BYTES + 1u];
+    static const char label[] = "EXPORTER-Channel-Binding";
+    static const char different_label[] = "EXPORTER-Other-Channel-Binding";
+    static const uint8_t ctx[] = {'a','b','c'};
+    size_t required = 0u, copied = 0u, i;
+
+    if (crypto_tls_session_copy_peer_chain_v1_2(client, NULL, 0u, &required)
+            != CRYPTO_TLS_OK
+        || !required || required > sizeof(chain))
+        return __LINE__;
+    memset(chain, 0xa5, sizeof(chain));
+    copied = 4u;
+    if (crypto_tls_session_copy_peer_chain_v1_2(
+            client, chain, required-1u, &copied)
+            != CRYPTO_TLS_PEER_BUFFER_TOO_SMALL || copied != required)
+        return __LINE__;
+    for (i = 0u; i < sizeof(chain); ++i)
+        if (chain[i] != 0xa5u) return __LINE__;
+    if (crypto_tls_session_copy_peer_chain_v1_2(
+            client, chain, sizeof(chain), &copied) != CRYPTO_TLS_OK
+        || copied != required || chain[0] != 0x30u)
+        return __LINE__;
+
+    if (crypto_tls_session_peer_sha256_v1_2(client, sha) != CRYPTO_TLS_OK
+        || memcmp(sha, FROZEN_RSA_LEAF_SHA256, sizeof(sha)) != 0)
+        return __LINE__;
+
+    /* The server's TLS connection is configured not to authenticate clients.
+     * Absent peer cert is distinct from a transport EOF or a valid fingerprint.
+     */
+    memset(absent, 0xa5, sizeof(absent));
+    copied = 0xa5u;
+    if (crypto_tls_session_peer_sha256_v1_2(server, absent)
+            != CRYPTO_TLS_PEER_CERT_ABSENT
+        || crypto_tls_session_copy_peer_chain_v1_2(
+            server, NULL, 0u, &copied) != CRYPTO_TLS_PEER_CERT_ABSENT
+        || copied != 0xa5u)
+        return __LINE__;
+    for (i = 0u; i < sizeof(absent); ++i)
+        if (absent[i] != 0xa5u) return __LINE__;
+
+    /* The same real TLS transcript and key schedule must agree on both
+     * sides; this is not a mocked exporter or a duplicated OpenSSL backend.
+     */
+    if (crypto_tls_session_export_v1_2(
+            client, label, NULL, 0u, 1u, binding_client, sizeof(binding_client))
+                != CRYPTO_TLS_OK
+        || crypto_tls_session_export_v1_2(
+            server, label, NULL, 0u, 1u, binding_server, sizeof(binding_server))
+                != CRYPTO_TLS_OK
+        || memcmp(binding_client, binding_server, sizeof(binding_client)) != 0
+        || crypto_tls_session_export_v1_2(
+            client, label, NULL, 0u, 1u, repeat, sizeof(repeat))
+                != CRYPTO_TLS_OK
+        || memcmp(binding_client, repeat, sizeof(repeat)) != 0)
+        return __LINE__;
+    for (i = 0u; i < sizeof(binding_client); ++i)
+        if (binding_client[i] != 0u) break;
+    if (i == sizeof(binding_client)) return __LINE__;
+
+    if (crypto_tls_session_export_v1_2(
+            client, label, NULL, 0u, 0u, no_context, sizeof(no_context))
+                != CRYPTO_TLS_OK
+        || crypto_tls_session_export_v1_2(
+            client, label, ctx, sizeof(ctx), 1u,
+            changed_context, sizeof(changed_context)) != CRYPTO_TLS_OK
+        || crypto_tls_session_export_v1_2(
+            client, different_label, NULL, 0u, 1u,
+            changed_label, sizeof(changed_label)) != CRYPTO_TLS_OK)
+        return __LINE__;
+    if (memcmp(binding_client, changed_context, sizeof(binding_client)) == 0
+        || memcmp(binding_client, changed_label, sizeof(binding_client)) == 0)
+        return __LINE__;
+    if ((protocol == CRYPTO_TLS_1_2 &&
+         memcmp(binding_client, no_context, sizeof(binding_client)) == 0)
+        || (protocol == CRYPTO_TLS_1_3 &&
+         memcmp(binding_client, no_context, sizeof(binding_client)) != 0))
+        return __LINE__;
+
+    /* Invalid requests MUST NOT alter any caller-owned output bytes. */
+    memset(untouched, 0xa5, sizeof(untouched));
+    if (crypto_tls_session_export_v1_2(
+            client, "", NULL, 0u, 1u, untouched, 32u)
+                != CRYPTO_TLS_INVALID_ARGUMENT
+        || crypto_tls_session_export_v1_2(
+            client, label, NULL, 0u, 2u, untouched, 32u)
+                != CRYPTO_TLS_INVALID_ARGUMENT
+        || crypto_tls_session_export_v1_2(
+            client, label, NULL, 1u, 1u, untouched, 32u)
+                != CRYPTO_TLS_INVALID_ARGUMENT
+        || crypto_tls_session_export_v1_2(
+            client, label, NULL, 0u, 1u,
+            untouched, CRYPTO_TLS_EXPORTER_MAX_BYTES+1u)
+                != CRYPTO_TLS_INVALID_ARGUMENT)
+        return __LINE__;
+    for (i = 0u; i < sizeof(untouched); ++i)
+        if (untouched[i] != 0xa5u) return __LINE__;
+    return 0;
+}
+
 static int test_protocol(crypto_tls_provider *provider, uint32_t protocol,
                          int configure_alpn)
 {
@@ -93,6 +214,10 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol,
     const char *client_names[] = {client_http, client_h2};
     const char *server_names[] = {server_h2, server_http};
     crypto_tls_session_info_v1_1 client_info, server_info, untouched;
+    uint8_t pre_sha[CRYPTO_TLS_PEER_SHA256_BYTES];
+    uint8_t pre_material[32];
+    uint8_t pre_chain[16];
+    size_t pre_chain_len = 0x5a5au, pre_i;
     static const char *invalid_names[] = {"", "h2"};
     char too_long_name[CRYPTO_TLS_ALPN_MAX_NAME_BYTES + 2u];
     const char *too_long[] = {too_long_name};
@@ -111,6 +236,24 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol,
         goto cleanup;
     if (crypto_tls_provider_session_count(provider,&sessions) != CRYPTO_TLS_OK
         || sessions != 2) goto cleanup;
+
+    memset(pre_sha, 0xa5, sizeof(pre_sha));
+    memset(pre_material, 0xa5, sizeof(pre_material));
+    memset(pre_chain, 0xa5, sizeof(pre_chain));
+    if (crypto_tls_session_peer_sha256_v1_2(client, pre_sha) != CRYPTO_TLS_AGAIN
+        || crypto_tls_session_copy_peer_chain_v1_2(
+            client, pre_chain, sizeof(pre_chain), &pre_chain_len)
+            != CRYPTO_TLS_AGAIN
+        || pre_chain_len != 0x5a5au
+        || crypto_tls_session_export_v1_2(
+            client, "EXPORTER-Channel-Binding", NULL, 0u, 1u,
+            pre_material, sizeof(pre_material)) != CRYPTO_TLS_AGAIN)
+        goto cleanup;
+    for (pre_i = 0u; pre_i < sizeof(pre_material); ++pre_i)
+        if (pre_material[pre_i] != 0xa5u || pre_sha[pre_i] != 0xa5u)
+            goto cleanup;
+    for (pre_i = 0u; pre_i < sizeof(pre_chain); ++pre_i)
+        if (pre_chain[pre_i] != 0xa5u) goto cleanup;
 
     memset(&client_info, 0xA5, sizeof(client_info));
     client_info.struct_size = sizeof(client_info);
@@ -192,6 +335,9 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol,
                || client_info.alpn[0] || server_info.alpn[0])
         goto cleanup;
 
+    if (validate_peer_and_exporter(client,server,protocol) != 0)
+        goto cleanup;
+
     for (step=0;step<MAX_DRIVES;step++) {
         if (!sent_done) {
             result = crypto_tls_session_send(client,sent,sizeof(sent),&sent_count);
@@ -258,6 +404,11 @@ int main(void)
     uint32_t count = UINT32_MAX;
     int rc = 1;
     uint64_t features = 0u;
+    uint64_t peer_features = 0u;
+    const uint64_t required_peer_features =
+        CRYPTO_TLS_PEER_FEATURE_DER_CHAIN_COPY |
+        CRYPTO_TLS_PEER_FEATURE_CERT_SHA256 |
+        CRYPTO_TLS_PEER_FEATURE_TLS_EXPORTER;
     const uint64_t required_features =
         CRYPTO_TLS_FEATURE_TLS12_ECDHE_RSA |
         CRYPTO_TLS_FEATURE_TLS13_RSA_PSS |
@@ -266,6 +417,11 @@ int main(void)
         CRYPTO_TLS_FEATURE_TEXT_ALPN |
         CRYPTO_TLS_FEATURE_SESSION_INFO;
 
+    if (crypto_tls_peer_abi_version() != CRYPTO_TLS_PEER_ABI_VERSION
+        || crypto_tls_peer_features_v1_2(&peer_features) != CRYPTO_TLS_OK
+        || peer_features != required_peer_features
+        || crypto_tls_peer_features_v1_2(NULL) != CRYPTO_TLS_INVALID_ARGUMENT)
+        return 1;
     if (crypto_tls_abi_version() != CRYPTO_TLS_ABI_VERSION
         || crypto_tls_extension_abi_version()
             != CRYPTO_TLS_EXTENSION_ABI_VERSION
@@ -301,6 +457,6 @@ done:
     if (s) (void)crypto_tls_session_destroy(&s);
     if (provider && crypto_tls_provider_destroy(&provider) != CRYPTO_TLS_OK)
         rc = 1;
-    if (!rc) puts("Crypto installed C11 TLS1.2/1.3 handshake, ALPN, cipher info, data, cancel and shutdown: PASS");
+    if (!rc) puts("Crypto installed C11 TLS1.2/1.3 ALPN, DER chain, SHA256, real exporter, record I/O and shutdown: PASS");
     return rc;
 }
