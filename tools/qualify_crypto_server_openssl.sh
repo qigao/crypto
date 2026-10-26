@@ -56,7 +56,7 @@ args = [
     "-CAfile", ca_path, "-verify_return_error",
     "-verify_hostname", "localhost",
     "-keymatexport", "EXPORTER-Channel-Binding", "-keymatexportlen", "32",
-    "-ign_eof", "-ignore_unexpected_eof",
+    "-ign_eof", "-ignore_unexpected_eof", "-state",
 ]
 if protocol == "12":
     args += ["-tls1_2", "-cipher", "ECDHE-RSA-AES128-GCM-SHA256",
@@ -82,11 +82,25 @@ with Path(logfile).open("wb") as output:
     if proc.returncode:
         log = Path(logfile).read_text(errors="replace")
         # This output contains exporter material. Do not print it!
-        print("Reverse OpenSSL TLS {} failed: rc={} verified={} http={}".format(
+        state_lines = [
+            line for line in log.splitlines()
+            if line.startswith("SSL_connect:")
+        ]
+        # Fixed/whitelisted phase labels only, NO TLS transcript or keys.
+        phase_class = {
+            "server_hello": any("read server hello" in l.lower() for l in state_lines),
+            "server_certificate": any("read server certificate" in l.lower() for l in state_lines),
+            "server_key_exchange": any("read server key exchange" in l.lower() for l in state_lines),
+            "client_finished": any("write finished" in l.lower() for l in state_lines),
+            "server_finished": any("read finished" in l.lower() for l in state_lines),
+            "application_data": "HTTP/1.0 200" in log,
+            "exporter_marker": "Keying material:" in log,
+        }
+        print("Reverse OpenSSL TLS {} failed: rc={} verified={} stages={}".format(
             protocol, proc.returncode,
             ("verify return code: 0" in log.lower()
              or "verification: ok" in log.lower()),
-            "HTTP/1.0 200" in log
+            phase_class
         ), file=sys.stderr)
         sys.exit(1)
 PY
@@ -95,6 +109,7 @@ PY
     # bounded state/length diagnostics, never the output containing secrets.
     sleep 0.2
     grep -E '^CRYPTO_TLS_PRIVATE_(HANDSHAKE_DIAG|CKE_DIAG|CKE_RECV|CKE_PARSED|CKE_DERIVE) ' "$server_log" >&2 || true
+    grep '^CRYPTO_TEST_REVERSE_PHASE ' "$server_log" >&2 || true
     grep '^Crypto test-only TLS server/exporter failed ' "$server_log" >&2 || true
     echo "Reverse OpenSSL TLS $proto peer did not qualify" >&2
     exit 1
@@ -105,6 +120,7 @@ PY
     # Print ONLY the approved private state/type/length diagnostic
     # without accidentally publishing a TLS transcript or export material.
     grep -E '^CRYPTO_TLS_PRIVATE_(HANDSHAKE_DIAG|CKE_DIAG|CKE_RECV|CKE_PARSED|CKE_DERIVE) ' "$server_log" >&2 || true
+    grep '^CRYPTO_TEST_REVERSE_PHASE ' "$server_log" >&2 || true
     grep '^Crypto test-only TLS server/exporter failed ' "$server_log" >&2 || true
     echo "Crypto TLS $proto server failed authenticated TLS/HTTP" >&2
     exit 1
