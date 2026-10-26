@@ -1,4 +1,6 @@
 @PACKAGE_INIT@
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
 # One installed native archive, one public target. No split aliases.
 get_property(_source GLOBAL PROPERTY SALTS_CRYPTO_PACKAGE_OWNER)
 if(TARGET Salts::Crypto)
