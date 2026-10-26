@@ -376,7 +376,7 @@ crypto_tls_result crypto_tls_session_set_alpn_v1_1(
         while (len <= CRYPTO_TLS_ALPN_MAX_NAME_BYTES && names[i][len])
             ++len;
         if (!len || len > CRYPTO_TLS_ALPN_MAX_NAME_BYTES
-            || wire_total > 2048u - (len + 1u)) {
+            || wire_total > 128u - (len + 1u)) {
             status = CRYPTO_TLS_INVALID_ARGUMENT;
             goto finished;
         }
