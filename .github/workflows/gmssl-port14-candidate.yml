@@ -1,0 +1,48 @@
+name: Crypto GmSSL staged RFC8446 CCS HRR parity
+on:
+  pull_request:
+    paths:
+      - "providers/gmssl/candidates/port14/**"
+      - "tests/gmssl-port14/**"
+      - "tools/audit_gmssl_port14_candidate.py"
+      - ".github/workflows/gmssl-port14-candidate.yml"
+      - "docs/GMSSL-OWNERSHIP.md"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  standalone-parser:
+    name: "Pinned candidate parser / ${{ matrix.os }}"
+    runs-on: "${{ matrix.os }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check 92 original Crypto-owned blobs and 7 exact port14 candidate blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          python3 tools/audit_gmssl_port14_candidate.py
+          python3 -m py_compile providers/gmssl/candidates/port14/tests/tls13-dummy-ccs-interop.py
+      - name: Build C11 candidate parser without GmSSL SDK, CNet or compatibility runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            gen=(-G 'Visual Studio 18 2026' -A x64)
+          else
+            gen=(-G Ninja)
+          fi
+          cmake -S tests/gmssl-port14 -B build-port14 "${gen[@]}" \
+            -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-port14 --config Release --parallel 2
+          ctest --test-dir build-port14 -C Release --no-tests=error \
+            --output-on-failure --repeat until-fail:3
