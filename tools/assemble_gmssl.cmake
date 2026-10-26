@@ -126,6 +126,8 @@ endforeach()
 # Apply reviewed Crypto-only hardening strictly AFTER the 40 original source
 # transformations. Frozen source blobs and patch ordering remain unchanged.
 include("${_crypto_root}/providers/gmssl/hardening/ubsan-undefined-behavior.cmake")
+# Post-import distinct reviewed protocol fix, not one of the historical 40.
+include("${_crypto_root}/providers/gmssl/hardening/tls13-hrr-compat-ccs.cmake")
 
 # Optional independent-interop diagnostics only; never run in a production
 # source handoff. Exact source anchors fail closed on upstream drift.
@@ -157,7 +159,8 @@ if(DEFINED GMSSL_ASSEMBLY_RECEIPT)
     "  \"original_port_version\": \"3.2.0#13\",\n"
     "  \"git_patch_count\": 1,\n"
     "  \"source_adaptations\": ${_n},\n"
-    "  \"crypto_hardening_edits\": 5,\n"
+    "  \"crypto_hardening_edits\": 5,\n"    "  \"crypto_protocol_fixes\": 1,\n"
+
     "  \"private_tls12_diagnostic\": ${_private_tls12_trace},\n"
     "  \"private_tls13_hrr_diagnostic\": ${_private_tls13_hrr},\n"
     "  \"secp256r1_sha256\": \"${_p256_sha}\",\n"
@@ -169,4 +172,4 @@ if(DEFINED GMSSL_ASSEMBLY_RECEIPT)
     "  \"tls_source_sha256\": \"${_tls_source_sha}\"\n"
     "}\n")
 endif()
-message(STATUS "GmSSL source assembled: one git patch + ${_n} original adaptations + 5 Crypto UB hardening edits")
+message(STATUS "GmSSL source assembled: one git patch + ${_n} original adaptations + 5 Crypto UB hardening edits + 1 reviewed HRR CCS fix")
