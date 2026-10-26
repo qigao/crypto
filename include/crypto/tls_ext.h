@@ -51,7 +51,7 @@ CRYPTO_TLS_API crypto_tls_result crypto_tls_get_features_v1_1(
 
 /* Configure text ALPN labels once, before ANY handshake attempt.
  * The API deep-copies 1..8 borrowed NUL-terminated printable ASCII names
- * of length 1..255, total wire payload bounded to 2048 bytes. The
+ * of length 1..127, total wire payload bounded to 128 bytes. The
  * resulting strings remain owned by the session until quiescent destroy;
  * never borrowed from caller storage once this function returns.
  * Reconfiguration or use after handshake start fails closed.
