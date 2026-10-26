@@ -113,6 +113,7 @@ int main(int argc, char **argv)
     SSL *ssl = NULL;
     int peer = -1, port, version, rc = 1, n, offset;
     unsigned char exporter[EXPORT_LEN] = {0};
+    unsigned char exporter_with_empty_context[EXPORT_LEN] = {0};
     unsigned int alpn_size = 0u;
     const unsigned char *alpn = NULL;
     char request[256];
@@ -121,13 +122,13 @@ int main(int argc, char **argv)
         "Connection: close\r\n\r\nOK";
     static const char label[] = "EXPORTER-Channel-Binding";
 
-    if (argc != 6) return 2;
+    if (argc != 7) return 2;
     if (strcmp(argv[1], "12") == 0) version = TLS1_2_VERSION;
     else if (strcmp(argv[1], "13") == 0) version = TLS1_3_VERSION;
     else return 2;
     port = atoi(argv[2]);
     if (port <= 0 || port > 65535
-        || !argv[3][0] || !argv[4][0] || !argv[5][0]) return 2;
+        || !argv[3][0] || !argv[4][0] || !argv[5][0] || !argv[6][0]) return 2;
     (void)signal(SIGPIPE, SIG_IGN);
     context = SSL_CTX_new(TLS_server_method());
     if (!context
@@ -153,7 +154,20 @@ int main(int argc, char **argv)
     if (SSL_version(ssl) != version
         || SSL_export_keying_material(ssl, exporter, sizeof(exporter),
             label, sizeof(label) - 1u, NULL, 0u, 0) != 1
-        || secret_to_file(argv[5], exporter) != 0) goto finish;
+        || SSL_export_keying_material(ssl, exporter_with_empty_context,
+            sizeof(exporter_with_empty_context), label,
+            sizeof(label) - 1u, NULL, 0u, 1) != 1
+        || secret_to_file(argv[5], exporter) != 0
+        || secret_to_file(argv[6], exporter_with_empty_context) != 0)
+        goto finish;
+    /* RFC 5705 distinguishes an omitted context from a present-but-empty
+     * context. TLS 1.3 RFC 8446 unconditionally hashes the empty context.
+     */
+    if ((version == TLS1_2_VERSION &&
+         CRYPTO_memcmp(exporter, exporter_with_empty_context, EXPORT_LEN) == 0)
+        || (version == TLS1_3_VERSION &&
+            CRYPTO_memcmp(exporter, exporter_with_empty_context, EXPORT_LEN) != 0))
+        goto finish;
 
     n = SSL_read(ssl, request, (int)sizeof(request) - 1);
     if (n <= 0) goto finish;
@@ -169,6 +183,7 @@ int main(int argc, char **argv)
     rc = 0;
 finish:
     OPENSSL_cleanse(exporter, sizeof(exporter));
+    OPENSSL_cleanse(exporter_with_empty_context, sizeof(exporter_with_empty_context));
     if (ssl) SSL_free(ssl);
     if (peer >= 0) close(peer);
     if (context) SSL_CTX_free(context);
