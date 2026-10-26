@@ -14,7 +14,7 @@ extern "C" {
 
 #define CRYPTO_TLS_EXTENSION_ABI_VERSION UINT32_C(0x00010001)
 #define CRYPTO_TLS_ALPN_MAX_PROTOCOLS 8u
-#define CRYPTO_TLS_ALPN_MAX_NAME_BYTES 255u
+#define CRYPTO_TLS_ALPN_MAX_NAME_BYTES 127u
 #define CRYPTO_TLS_CIPHER_NAME_CAPACITY 128u
 
 /* Bits deliberately exclude: system CA stores/path, ALPN arbitrary binary
