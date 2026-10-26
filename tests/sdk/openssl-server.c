@@ -29,7 +29,7 @@ typedef struct server_transport {
 static int64_t on_write(void *user, const uint8_t *data, size_t len)
 {
     server_transport *t = (server_transport *)user;
-    size_t chunk = len < 73u ? len : 73u;
+    size_t chunk = len; /* Diagnose independent OpenSSL peer without forced split. */
     ssize_t n = send(t->fd, data, chunk, 0);
     if (n >= 0) return (int64_t)n;
     if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
@@ -40,7 +40,7 @@ static int64_t on_write(void *user, const uint8_t *data, size_t len)
 static int64_t on_read(void *user, uint8_t *data, size_t len)
 {
     server_transport *t = (server_transport *)user;
-    size_t chunk = len < 41u ? len : 41u;
+    size_t chunk = len; /* Native two-peer SDK still tests bounded short I/O. */
     ssize_t n = recv(t->fd, data, chunk, 0);
     if (n >= 0) return (int64_t)n;
     if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
