@@ -105,6 +105,13 @@ if(CRYPTO_SDK_ENABLE_OPENSSL_PEER)
       C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
     target_link_libraries(crypto_sdk_openssl_exporter_oracle PRIVATE
       OpenSSL::SSL OpenSSL::Crypto)
+    add_executable(crypto_sdk_openssl_api_peer_client
+      openssl-api-peer-client.c)
+    set_target_properties(crypto_sdk_openssl_api_peer_client PROPERTIES
+      C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    # Pure OpenSSL3 test program: no Crypto::TLS or private GmSSL target.
+    target_link_libraries(crypto_sdk_openssl_api_peer_client PRIVATE
+      OpenSSL::SSL OpenSSL::Crypto)
   endif()
 endif()
 
