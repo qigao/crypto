@@ -88,8 +88,10 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol,
         NULL,NULL,SDK_SERVER_CERT_FILE,SDK_SERVER_KEY_FILE,"",0
     };
     crypto_tls_session *client = NULL, *server = NULL;
-    static const char *client_names[] = {"http/1.1", "h2"};
-    static const char *server_names[] = {"h2", "http/1.1"};
+    char client_http[] = "http/1.1", client_h2[] = "h2";
+    char server_http[] = "http/1.1", server_h2[] = "h2";
+    const char *client_names[] = {client_http, client_h2};
+    const char *server_names[] = {server_h2, server_http};
     crypto_tls_session_info_v1_1 client_info, server_info, untouched;
     static const char *invalid_names[] = {"", "h2"};
     char too_long_name[CRYPTO_TLS_ALPN_MAX_NAME_BYTES + 2u];
@@ -132,6 +134,18 @@ static int test_protocol(crypto_tls_provider *provider, uint32_t protocol,
             || crypto_tls_session_set_alpn_v1_1(client, client_names, 2)
                 != CRYPTO_TLS_INVALID_ARGUMENT)
             goto cleanup;
+
+        /* The native TLS_CTX must use session-owned deep copies, not the
+         * caller's now-corrupted stack buffers and char** list.
+         */
+        memset(client_http, 'x', strlen(client_http));
+        memset(client_h2, 'y', strlen(client_h2));
+        memset(server_http, 'z', strlen(server_http));
+        memset(server_h2, 'w', strlen(server_h2));
+        client_names[0] = NULL;
+        client_names[1] = NULL;
+        server_names[0] = NULL;
+        server_names[1] = NULL;
     }
 
     {
