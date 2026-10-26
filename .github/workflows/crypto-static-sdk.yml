@@ -138,7 +138,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: crypto-static-${{ matrix.os }
+          name: crypto-static-${{ matrix.os }}
           path: |
             build-crypto/static.json
             build-crypto/relocated.json
@@ -148,7 +148,7 @@ jobs:
           if-no-files-found: warn
 
   linux-source-sanitizers:
-    name: "Static Crypto source ${{ matrix.mode }"
+    name: "Static Crypto source ${{ matrix.mode }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -179,7 +179,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ matrix.mode }" == tsan ]]; then
+          if [[ "${{ matrix.mode }}" == tsan ]]; then
             flags="-O1 -g -fno-omit-frame-pointer -fsanitize=thread"
           else
             flags="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
@@ -220,7 +220,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: crypto-source-${{ matrix.mode }
+          name: crypto-source-${{ matrix.mode }}
           path: |
             build-crypto/static.json
             build-crypto/Testing/Temporary/LastTest.log
