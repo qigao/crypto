@@ -85,6 +85,37 @@ static int connected_socket(int port)
     return fd;
 }
 
+/* A test-local, exclusive 0600 file; no derived key material is ever
+ * logged or exported to GitHub artifacts.
+ */
+static int save_test_key(const char *path, const uint8_t secret[32])
+{
+    static const char digits[] = "0123456789ABCDEF";
+    char hex[65];
+    size_t i, offset = 0;
+    int fd, rc = -1;
+    for (i = 0; i < 32u; ++i) {
+        hex[2u*i] = digits[secret[i] >> 4u];
+        hex[2u*i+1u] = digits[secret[i] & 15u];
+    }
+    hex[64] = '\n';
+    fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd >= 0) {
+        while (offset < sizeof(hex)) {
+            ssize_t n = write(fd, hex + offset, sizeof(hex) - offset);
+            if (n <= 0) break;
+            offset += (size_t)n;
+        }
+        rc = close(fd) == 0 && offset == sizeof(hex) ? 0 : -1;
+        if (rc != 0) (void)unlink(path);
+    }
+    {
+        volatile char *wipe = hex;
+        for (i = 0; i < sizeof(hex); ++i) wipe[i] = 0;
+    }
+    return rc;
+}
+
 int main(int argc,char **argv)
 {
     crypto_tls_provider *provider=NULL;
@@ -109,7 +140,7 @@ int main(int argc,char **argv)
     uint8_t response[8192];
     size_t total=0,sent=0;
     int sending=1;
-    if(argc!=8 && argc!=9){fprintf(stderr,"usage: sdk-openssl-client 12|13 port ca-file hostname good|reject sha256-hex leaf-der [private-exporter-file]\n");return 2;}
+    if(argc!=8 && argc!=9 && argc!=10){fprintf(stderr,"usage: sdk-openssl-client 12|13 port ca-file hostname good|reject sha256-hex leaf-der [private-exporter-no-context [private-exporter-empty-context]]\n");return 2;}
     if(strcmp(argv[1],"12")==0)protocol=CRYPTO_TLS_1_2;
     else if(strcmp(argv[1],"13")==0)protocol=CRYPTO_TLS_1_3;
     else return 2;
@@ -210,7 +241,7 @@ int main(int argc,char **argv)
      * OpenSSL SSL_export_keying_material(...,use_context=0). Never confuse
      * it with the TLS 1.2 CNet context-present-empty channel binding.
      */
-    if(argc == 9 && crypto_tls_session_export_v1_2(
+    if(argc >= 9 && crypto_tls_session_export_v1_2(
         session, "EXPORTER-Channel-Binding", NULL, 0u, 0u,
         reference_secret, sizeof(reference_secret)) != CRYPTO_TLS_OK)
         goto done;
@@ -241,26 +272,13 @@ done:
     /* Publish test secret only if the entire authenticated TLS/HTTP check
      * succeeded. Never print or upload any exporter-derived key material.
      */
-    if(rc == 0 && argc == 9){
-        static const char hexdigits[] = "0123456789ABCDEF";
-        char hex[sizeof(reference_secret)*2u+1u];
-        int fd = -1;
-        ssize_t wrote;
-        for(j = 0u; j < sizeof(reference_secret); ++j){
-            hex[j*2u] = hexdigits[reference_secret[j] >> 4u];
-            hex[j*2u+1u] = hexdigits[reference_secret[j] & 15u];
-        }
-        hex[sizeof(hex)-1u] = '\n';
-        fd = open(argv[8], O_WRONLY|O_CREAT|O_EXCL, 0600);
-        if(fd < 0){rc = 1;}
-        else {
-            wrote = write(fd, hex, sizeof(hex));
-            if(close(fd) != 0 || wrote != (ssize_t)sizeof(hex)){
-                (void)unlink(argv[8]);
-                rc = 1;
-            }
-        }
-        memset(hex, 0, sizeof(hex));
+    if (rc == 0 && argc >= 9 &&
+        save_test_key(argv[8], reference_secret) != 0)
+        rc = 1;
+    if (rc == 0 && argc == 10 &&
+        save_test_key(argv[9], keymat) != 0) {
+        (void)unlink(argv[8]);
+        rc = 1;
     }
     memset(reference_secret, 0, sizeof(reference_secret));
     if(leaf) (void)fclose(leaf);
