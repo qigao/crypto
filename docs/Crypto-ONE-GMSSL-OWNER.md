@@ -25,10 +25,11 @@ The public <crypto/provider.h> ABI v0.1 and <crypto/tls.h> ABI v1 both
 retain their distinct version marker semantics. One physical native owner
 is not the same thing as treating the two API structures as identical.
 
-The original v1 native export surface was 14 functions. The additive
-v1.1 ALPN/inspection candidate now exports **exactly 18 public functions**:
-three `crypto_provider_*`, eleven base `crypto_tls_*` and four v1.1
-extension functions, all from the same physical shared binary. ELF uses separate SM3
+The original v1 native export surface was 14 functions. The v1.1
+ALPN/inspection extension added four, and the v1.2 peer/exporter
+extension adds five. The **same physical shared binary now exports
+exactly 23 public functions**: three SM3, eleven base TLS, four TLS
+v1.1 and five TLS v1.2; no private GmSSL functions are exported. ELF uses separate SM3
 and TLS linker version groups on the *same ELF image*, macOS one explicit
 export list, Windows one explicit DLL export policy; private GmSSL
 symbols are never exported.
@@ -60,7 +61,7 @@ The three-platform CI runs this from a clean installed SDK and then
 against the relocated prefix and repeats both runtime tests and the native
 ELF/Mach-O/PE binary-import/export/SONAME audit.
 
-The binary audit checks exactly 14 approved exports, the ONE native
+The binary audit checks exactly 23 approved exports, the ONE native
 Crypto owner dynamic import of each consumer/module and absence of a
 second `gmssl` or `crypto_provider` native image. The audit is evidence
 of this specific installed C11/C++17 consumer graph; it does not
