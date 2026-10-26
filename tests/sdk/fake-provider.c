@@ -5,6 +5,7 @@
 #define CRYPTO_TLS_BUILD_DLL 1
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
+#include <crypto/tls_peer.h>
 
 uint32_t crypto_tls_abi_version(void)
 {
@@ -100,5 +101,36 @@ crypto_tls_result crypto_tls_get_features_v1_1(uint64_t *out_features)
 uint32_t crypto_tls_extension_abi_version(void)
 {
     return CRYPTO_TLS_EXTENSION_ABI_VERSION;
+}
+/* Full negative-fixture symbol surface; version() intentionally rejects. */
+uint32_t crypto_tls_peer_abi_version(void)
+{
+    return CRYPTO_TLS_PEER_ABI_VERSION;
+}
+crypto_tls_result crypto_tls_peer_features_v1_2(uint64_t *out_features)
+{
+    if (out_features) *out_features = 0u;
+    return CRYPTO_TLS_BACKEND_ERROR;
+}
+crypto_tls_result crypto_tls_session_copy_peer_chain_v1_2(
+    crypto_tls_session *session, uint8_t *out, size_t capacity, size_t *out_size)
+{
+    (void)session; (void)out; (void)capacity; (void)out_size;
+    return CRYPTO_TLS_BACKEND_ERROR;
+}
+crypto_tls_result crypto_tls_session_peer_sha256_v1_2(
+    crypto_tls_session *session, uint8_t out[CRYPTO_TLS_PEER_SHA256_BYTES])
+{
+    (void)session; (void)out;
+    return CRYPTO_TLS_BACKEND_ERROR;
+}
+crypto_tls_result crypto_tls_session_export_v1_2(
+    crypto_tls_session *session, const char *label,
+    const uint8_t *context, size_t context_len, uint32_t use_context,
+    uint8_t *out, size_t out_len)
+{
+    (void)session; (void)label; (void)context; (void)context_len;
+    (void)use_context; (void)out; (void)out_len;
+    return CRYPTO_TLS_BACKEND_ERROR;
 }
 #endif
