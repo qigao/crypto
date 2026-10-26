@@ -62,8 +62,11 @@ if protocol == "12":
     args += ["-tls1_2", "-cipher", "ECDHE-RSA-AES128-GCM-SHA256",
              "-sigalgs", "rsa_pkcs1_sha256"]
 else:
+    # Isolate the already-admitted P-256 key share first. The default
+    # OpenSSL groups/HelloRetryRequest path remains a separate mandatory
+    # gate and must not be counted as passing based on this constrained case.
     args += ["-tls1_3", "-ciphersuites", "TLS_AES_128_GCM_SHA256",
-             "-sigalgs", "rsa_pss_rsae_sha256"]
+             "-sigalgs", "rsa_pss_rsae_sha256", "-groups", "P-256"]
 with Path(logfile).open("wb") as output:
     proc = subprocess.Popen(
         args, stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT,
