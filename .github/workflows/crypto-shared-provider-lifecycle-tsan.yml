@@ -92,10 +92,11 @@ jobs:
             -DCRYPTO_SDK_ENABLE_HOST_LEASE=ON \
             -DCRYPTO_SDK_ENABLE_HOST_LEASE_RACE=ON \
             -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO_RACE=ON \
             "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
           cmake --build build-sdk-tsan --parallel 2
           test "$(ctest --test-dir build-sdk-tsan -N |
-            sed -n 's/^Total Tests: //p')" = 6
+            sed -n 's/^Total Tests: //p')" = 7
       - name: Repeat native callback-in-flight cancellation and DSO host lease races
         shell: bash
         run: |
@@ -109,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           ctest --test-dir build-sdk-tsan \
-            -R '^crypto[.]installed[.]cipher_bio_tls12_tls13$' \
+            -R '^crypto[.]installed[.]cipher_bio_(tls12_tls13|cancel_race)$' \
             --no-tests=error --output-on-failure --timeout 120 \
             --repeat until-fail:3
       - name: TSan SM3 and TLS common-owner C11 C++17 and 2 DSO modules
