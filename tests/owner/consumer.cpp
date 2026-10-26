@@ -1,5 +1,6 @@
 #include <crypto/provider.h>
 #include <crypto/tls.h>
+#include <crypto/tls_ext.h>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -10,6 +11,8 @@ static_assert(sizeof(crypto_provider_result) == sizeof(int),
               "C11 ABI result enumeration must match C++17 consumer");
 int main() {
   crypto_provider_abi_0_1_required();
+  if (crypto_tls_extension_abi_version() != CRYPTO_TLS_EXTENSION_ABI_VERSION)
+    return 7;
   if (crypto_tls_abi_version() != CRYPTO_TLS_ABI_VERSION)
     return 4;
   crypto_tls_provider* instance = nullptr;
