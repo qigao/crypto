@@ -92,6 +92,7 @@ jobs:
             "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined" \
             "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/_installed-asan" \
             -DCRYPTO_SDK_ENABLE_OPENSSL_PEER=ON \
+            -DCRYPTO_SDK_ENABLE_INDEPENDENT_EXPORTER=ON \
             -DCRYPTO_SDK_ENABLE_HOST_LEASE=ON \
             "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
           cmake --build build-sdk-asan --parallel 2
@@ -113,7 +114,8 @@ jobs:
             "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_client" \
             "$RUNNER_TEMP/crypto-shared-asan-peer" 9780
           bash tools/qualify_crypto_exporter_openssl.sh \
-            "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_server" \
+            "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_client" \
+            "$GITHUB_WORKSPACE/build-sdk-asan/crypto_sdk_openssl_exporter_oracle" \
             "$RUNNER_TEMP/crypto-shared-asan-peer" 9860
       - name: ASan UBSan LSan exact SM3 KAT, shared TLS view and two imported MODULEs
         shell: bash
