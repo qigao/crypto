@@ -56,7 +56,7 @@ ATTRIBUTE_WARN_UNUSED_RET static inline word_t nn_getbit_masked(nn_src_t in, bit
         MUST_HAVE((retval != NULL), ret, err);
 
         /* Get a random value for masking */
-        ret = salts_crypto_libecc_salts_crypto_libecc_get_random((u8*)&r, sizeof(r));
+        ret = salts_crypto_libecc_get_random((u8*)&r, sizeof(r));
         r_mask = r;
 
 err:

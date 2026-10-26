@@ -192,7 +192,7 @@ int nn_cnd_swap(int cnd, nn_t in1, nn_t in2)
 	 * EM Side Channel Attack on Several Constant-Time Elliptic
 	 * Curve Implementations in Mobile Platforms" by Alam et al.
 	 */
-	ret = salts_crypto_libecc_salts_crypto_libecc_get_random((u8*)&r, sizeof(r)); EG(ret, err);
+	ret = salts_crypto_libecc_get_random((u8*)&r, sizeof(r)); EG(ret, err);
 	r_mask = r;
 
 	for (i = 0; i < NN_MAX_WORD_LEN; i++) {
