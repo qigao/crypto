@@ -89,6 +89,23 @@ if(CRYPTO_SDK_ENABLE_OPENSSL_PEER)
   set_target_properties(crypto_sdk_openssl_server PROPERTIES
     C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
   target_link_libraries(crypto_sdk_openssl_server PRIVATE Crypto::TLS)
+
+  # The reference peer is a *separate* test-only executable linked
+  # exclusively to OpenSSL 3. NO Crypto::TLS target may gain OpenSSL links.
+  option(CRYPTO_SDK_ENABLE_INDEPENDENT_EXPORTER
+    "Build independent OpenSSL3 keying-material reference server" OFF)
+  if(CRYPTO_SDK_ENABLE_INDEPENDENT_EXPORTER)
+    find_package(OpenSSL 3 REQUIRED COMPONENTS SSL Crypto)
+    if(OPENSSL_VERSION VERSION_GREATER_EQUAL "4.0.0")
+      message(FATAL_ERROR "This exact exporter oracle requires OpenSSL3")
+    endif()
+    add_executable(crypto_sdk_openssl_exporter_oracle
+      openssl-exporter-oracle.c)
+    set_target_properties(crypto_sdk_openssl_exporter_oracle PROPERTIES
+      C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    target_link_libraries(crypto_sdk_openssl_exporter_oracle PRIVATE
+      OpenSSL::SSL OpenSSL::Crypto)
+  endif()
 endif()
 
 # Host-side lease tests intentionally link ONLY the installed static
