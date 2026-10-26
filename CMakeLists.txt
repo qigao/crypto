@@ -57,6 +57,21 @@ if(NOT _gmssl_archive OR NOT EXISTS "${_gmssl_archive}" OR
 endif()
 get_filename_component(_gmssl_archive "${_gmssl_archive}" REALPATH)
 file(TO_CMAKE_PATH "${_gmssl_archive}" _gmssl_archive)
+if(WIN32)
+  set(_gmssl_expected_archive "${_gmssl_prefix}/lib/gmssl.lib")
+else()
+  set(_gmssl_expected_archive "${_gmssl_prefix}/lib/libgmssl.a")
+endif()
+if(NOT EXISTS "${_gmssl_expected_archive}")
+  message(FATAL_ERROR "Pinned vcpkg GmSSL static archive missing from its installation prefix")
+endif()
+get_filename_component(_gmssl_expected_archive "${_gmssl_expected_archive}" REALPATH)
+file(TO_CMAKE_PATH "${_gmssl_expected_archive}" _gmssl_expected_archive)
+if(NOT _gmssl_archive STREQUAL _gmssl_expected_archive)
+  message(FATAL_ERROR
+    "GmSSL::GmSSL must resolve to the static library in CRYPTO_GMSSL_ROOT; another owner is forbidden")
+endif()
+unset(_gmssl_expected_archive)
 # The imported GmSSL target must remain BUILD-PRIVATE. The only installed
 # library target from this project is the combined Salts::Crypto archive.
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
