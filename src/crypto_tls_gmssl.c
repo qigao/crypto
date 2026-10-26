@@ -117,7 +117,7 @@ static void trace_server_handshake_failure(const TLS_CONNECT *c, int ret)
         "CRYPTO_TLS_PRIVATE_HANDSHAKE_DIAG ret=%d state=%d"
         " recordlen=%zu record_offset=%zu type=%u version=%u"
         " wire_payload=%zu handshake_type=%u handshake_body=%zu"
-        " available_body=%zu\\n",
+        " available_body=%zu\n",
         ret, c->handshake_state, available, c->record_offset, type,
         version, declared_record, handshake_type, handshake_length,
         available >= 9u ? available - 9u : 0u);
