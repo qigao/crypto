@@ -13,6 +13,8 @@ on:
       - "tools/qualify_crypto_exporter_openssl.sh"
       - "tools/qualify_crypto_server_openssl.sh"
       - "tools/qualify_crypto_server_api_openssl.sh"
+      - "tools/tls13_hrr_ccs_mutation_proxy.py"
+      - "tools/qualify_crypto_hrr_ccs_negative.sh"
       - "tools/assemble_gmssl.cmake"
       - "providers/gmssl/hardening/**"
       - "providers/gmssl/diagnostics/**"
@@ -132,6 +134,13 @@ jobs:
           CRYPTO_TLS_TEST_HRR_ONLY=1 bash tools/qualify_crypto_server_openssl.sh \
             "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" \
             "$RUNNER_TEMP/crypto-shared-peer" 9920
+          # Two real OpenSSL3 security-negative HRR cases using a test-only
+          # record proxy: malformed 0x02 and duplicate valid CCS. They must
+          # fail the native handshake, with ZERO exporter byte release.
+          bash tools/qualify_crypto_hrr_ccs_negative.sh \
+            "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" \
+            "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_api_peer_client" \
+            "$RUNNER_TEMP/crypto-shared-peer" 9970
       - name: Upload independent test evidence without private keys
         if: always()
         uses: actions/upload-artifact@v4
