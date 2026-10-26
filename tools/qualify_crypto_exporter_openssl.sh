@@ -91,8 +91,25 @@ with Path(secret_path).open("wb") as output:
               file=sys.stderr)
         raise SystemExit(1)
     if process.returncode != 0:
-        print("OpenSSL exporter peer returned a failed TLS/session result",
-              file=sys.stderr)
+        # Report only categorical diagnostics. NEVER expose the OpenSSL
+        # exporter material (or any session key/log bytes) to public CI logs.
+        evidence = Path(secret_path).read_text(errors="replace").lower()
+        markers = {
+            "handshake_alert": "alert handshake" in evidence,
+            "certificate_alert": "alert certificate" in evidence,
+            "no_shared_cipher": "no shared cipher" in evidence,
+            "signature_failure": "signature" in evidence and "failed" in evidence,
+            "verification_ok": "verify return code: 0" in evidence
+                or "verification: ok" in evidence,
+            "http_received": "http/1.0 200 ok" in evidence,
+            "exporter_available": "keying material:" in evidence,
+            "unexpected_eof": "unexpected eof" in evidence,
+        }
+        print(
+            "OpenSSL independent exporter peer failed (returncode={}; "
+            "classification={})".format(process.returncode, markers),
+            file=sys.stderr
+        )
         raise SystemExit(1)
 PY
 
