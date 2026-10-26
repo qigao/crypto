@@ -13,9 +13,9 @@ an independently implemented OpenSSL 3 server.
 
 This branch adds a TEST-ONLY reference server compiled from
 `tests/sdk/openssl-exporter-oracle.c`, which links only
-`OpenSSL::SSL` / `OpenSSL::Crypto`, **never Crypto::TLS or GmSSL**.
+`OpenSSL::SSL` / `OpenSSL::Crypto`, **never Salts::TLS or GmSSL**.
 The Crypto C11 client still links only the single imported native
-`Crypto::TLS` shared image, **never the OpenSSL library**.
+`Salts::TLS` shared image, **never the OpenSSL library**.
 
 The reference server uses the real OpenSSL 3
 `SSL_export_keying_material()` implementation after `SSL_accept()`.

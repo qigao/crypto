@@ -1,7 +1,7 @@
 # Crypto M1.5: first single shared native TLS provider (Draft)
 
 The pinned, reproducibly assembled GmSSL 3.2.0 implementation is linked **once**
-inside `Crypto::TLS`, a shared library. Production CNet and the existing
+inside `Salts::TLS`, a shared library. Production CNet and the existing
 `vcpkg-cache gmssl 3.2.0#13` port are unchanged.
 
 ## Boundaries
@@ -58,7 +58,7 @@ inside `Crypto::TLS`, a shared library. Production CNet and the existing
 The CI workflow `crypto-shared-provider-sdk.yml` rebuilds the exact
 upstream revision, applies the 40 original transformations and five
 separate Crypto safety fixes, compiles its private static code and
-installs **only** the shared `Crypto::TLS` package + public header.
+installs **only** the shared `Salts::TLS` package + public header.
 
 A second, independently configured C11 CMake project reads only the installed
 package and runs:

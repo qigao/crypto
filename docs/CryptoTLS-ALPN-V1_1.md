@@ -14,7 +14,7 @@ and is **not** a complete SaltsCore CNet replacement.
   `CRYPTO_TLS_EXTENSION_ABI_VERSION=0x00010001`, queryable through
   `crypto_tls_extension_abi_version()`. Four additional exports reside in
   the SAME shared library (15 TLS + 3 SM3 total = **18 exact exports**).
-  The host-only `Crypto::TLSHost` validates all 15 TLS exports and the
+  The host-only `Salts::TLSHost` validates all 15 TLS exports and the
   extension version before exposing the v1.1 function table; invalid or
   partial DSO tables fail closed.
 - `crypto_tls_get_features_v1_1()` reports explicitly supported options:

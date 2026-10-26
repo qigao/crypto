@@ -14,7 +14,7 @@ Five additional functions appear in the **same** shared `crypto_tls`
 image: version, feature flags, copied DER chain, first peer certificate
 SHA-256, RFC 5705/8446 keying material. The native export list is
 **23 exact Crypto names** (3 SM3 + 11 TLS v1 + 4 TLS v1.1 + 5 v1.2).
-`Crypto::TLSHost` validates all 20 TLS functions and every extension
+`Salts::TLSHost` validates all 20 TLS functions and every extension
 marker before publishing a dynamic library lease.
 
 ## Certificate ownership

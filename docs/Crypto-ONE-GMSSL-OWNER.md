@@ -17,9 +17,9 @@ Crypto UB edits remain unchanged.
 
 | CMake installed target | Type | Installed native image |
 | --- | --- | --- |
-| `Crypto::TLS` | imported SHARED | `crypto_tls` (one DLL/dylib/so) |
-| `Crypto::Provider` | imported INTERFACE view | links `Crypto::TLS`, no new image |
-| `Crypto::TLSHost` | host-side STATIC lease helper | only OS loader/atomic admission, no GmSSL |
+| `Salts::TLS` | imported SHARED | `crypto_tls` (one DLL/dylib/so) |
+| `Salts::CryptoProvider` | imported INTERFACE view | links `Salts::TLS`, no new image |
+| `Salts::TLSHost` | host-side STATIC lease helper | only OS loader/atomic admission, no GmSSL |
 
 The public <crypto/provider.h> ABI v0.1 and <crypto/tls.h> ABI v1 both
 retain their distinct version marker semantics. One physical native owner
@@ -36,9 +36,9 @@ symbols are never exported.
 
 Two installable configurations exist:
 - `find_package(Crypto 0.1 CONFIG REQUIRED)` exposes
-  `Crypto::Provider` as an imported INTERFACE view.
+  `Salts::CryptoProvider` as an imported INTERFACE view.
 - `find_package(CryptoTLS 0.1 CONFIG REQUIRED)` exposes the exact
-  same native `Crypto::TLS` and its host-only `Crypto::TLSHost`.
+  same native `Salts::TLS` and its host-only `Salts::TLSHost`.
   `CryptoConfig.cmake` **requires** CryptoTLS and rejects an independent
   Provider native target. There is no `GmSSLConfig.cmake`, public
   GmSSL static archive or second Provider DLL in the install tree.

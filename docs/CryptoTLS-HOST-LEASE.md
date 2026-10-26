@@ -1,7 +1,7 @@
 # Crypto TLSHost — host-side DSO admission and quiescent unload (M1.9)
 
-This module is a **host-only C11 library** `Crypto::TLSHost`, installed
-alongside `Crypto::TLS`. It does not link or contain the private GmSSL
+This module is a **host-only C11 library** `Salts::TLSHost`, installed
+alongside `Salts::TLS`. It does not link or contain the private GmSSL
 static archive or any Crypto TLS backend code. Its job is *only* to own
 a native loader reference, verify the eleven public `crypto_tls_*` ABI
 symbols, and prevent that loader reference from being released while
@@ -54,7 +54,7 @@ Normal Linux/macOS/Windows installed C11 SDK now adds
 `LoadLibrary/dlopen`/drain/release/unload cycles against the installed
 Crypto Provider, with two simultaneous leases, provider creation,
 no late admissions and idempotent successful close. The host test
-links only `Crypto::TLSHost` and is not a direct Crypto TLS consumer.
+links only `Salts::TLSHost` and is not a direct Crypto TLS consumer.
 
 Native Linux TSan also adds
 `crypto.installed.host_lease_callback_race`: 64
