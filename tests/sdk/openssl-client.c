@@ -3,6 +3,7 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include <crypto/tls.h>
+#include <crypto/tls_ext.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -89,6 +90,8 @@ int main(int argc,char **argv)
     crypto_tls_session *session=NULL;
     crypto_tls_session_options options;
     crypto_tls_io io;
+    static const char *alpn_names[] = {"http/1.1", "h2"};
+    crypto_tls_session_info_v1_1 info;
     crypto_tls_result status=CRYPTO_TLS_INVALID_ARGUMENT;
     transport t={-1,0,0};
     int port,protocol,want_success,success=0,step,rc=1;
@@ -122,7 +125,9 @@ int main(int argc,char **argv)
     io.write=socket_write;
     io.read=socket_read;
     if(crypto_tls_provider_create(CRYPTO_TLS_ABI_VERSION,&provider)!=CRYPTO_TLS_OK
-       || crypto_tls_session_create(provider,&options,&io,&session)!=CRYPTO_TLS_OK)
+       || crypto_tls_session_create(provider,&options,&io,&session)!=CRYPTO_TLS_OK
+       || crypto_tls_extension_abi_version()!=CRYPTO_TLS_EXTENSION_ABI_VERSION
+       || crypto_tls_session_set_alpn_v1_1(session,alpn_names,2)!=CRYPTO_TLS_OK)
         goto done;
     deadline=monotonic_ms()+MAX_RUN_MS;
     for(step=0;step<20000 && monotonic_ms()<deadline;step++){
@@ -142,6 +147,16 @@ int main(int argc,char **argv)
     }
     if(!success){
         fprintf(stderr,"valid OpenSSL peer handshake failed: %d\n",(int)status);
+        goto done;
+    }
+
+    memset(&info,0,sizeof(info));
+    info.struct_size=sizeof(info);
+    if(crypto_tls_session_get_info_v1_1(session,&info)!=CRYPTO_TLS_OK
+        || info.protocol!=(uint32_t)protocol || info.cipher_suite==0u
+        || !info.cipher_name[0] || info.alpn_size!=2u
+        || strcmp(info.alpn,"h2")!=0) {
+        fprintf(stderr,"OpenSSL ALPN/protocol inspection rejected or missing\n");
         goto done;
     }
 
