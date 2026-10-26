@@ -113,7 +113,7 @@ int main(int argc, char **argv)
     SSL *ssl = NULL;
     int peer = -1, port, version, rc = 1, n, offset;
     unsigned char exporter[EXPORT_LEN] = {0};
-    unsigned char alpn_size = 0;
+    unsigned int alpn_size = 0u;
     const unsigned char *alpn = NULL;
     char request[256];
     static const char reply[] =
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
     ssl = SSL_new(context);
     if (!ssl || SSL_set_fd(ssl, peer) != 1 || SSL_accept(ssl) != 1)
         goto finish;
-    SSL_get0_alpn_selected(ssl, &alpn, (unsigned int *)&alpn_size);
+    SSL_get0_alpn_selected(ssl, &alpn, &alpn_size);
     if (!alpn || alpn_size != 2u || memcmp(alpn, "h2", 2u) != 0)
         goto finish;
     if (SSL_version(ssl) != version
