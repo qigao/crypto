@@ -20,7 +20,7 @@ set_target_properties(PrivateGmSSL PROPERTIES
   INTERFACE_INCLUDE_DIRECTORIES "${CRYPTO_GMSSL_SOURCE}/include")
 
 add_library(CryptoTLSProvider SHARED src/crypto_tls_gmssl.c src/provider_sm3.c)
-add_library(Crypto::TLS ALIAS CryptoTLSProvider)
+add_library(Salts::TLS ALIAS CryptoTLSProvider)
 set_target_properties(CryptoTLSProvider PROPERTIES
   OUTPUT_NAME crypto_tls
   EXPORT_NAME TLS
@@ -51,11 +51,11 @@ endif()
 
 
 # One physical shared image owns the private GmSSL archive. The SM3
-# Crypto::Provider CMake view is an INTERFACE alias of Crypto::TLS, not a
+# Salts::CryptoProvider CMake view is an INTERFACE alias of Salts::TLS, not a
 # second SHARED/STATIC binary. Export both views from one target set.
 add_library(CryptoProviderView INTERFACE)
-add_library(Crypto::Provider ALIAS CryptoProviderView)
-set_target_properties(CryptoProviderView PROPERTIES EXPORT_NAME Provider)
+add_library(Salts::CryptoProvider ALIAS CryptoProviderView)
+set_target_properties(CryptoProviderView PROPERTIES EXPORT_NAME CryptoProvider)
 target_link_libraries(CryptoProviderView INTERFACE CryptoTLSProvider)
 
 if(MSVC)
@@ -83,7 +83,7 @@ endif()
 # Host loader owns only explicit OS dynamic-library references and lease
 # control blocks; it never links or embeds GmSSL nor the Crypto TLS DSO.
 add_library(CryptoTLSHost STATIC src/crypto_tls_loader.c)
-add_library(Crypto::TLSHost ALIAS CryptoTLSHost)
+add_library(Salts::TLSHost ALIAS CryptoTLSHost)
 set_target_properties(CryptoTLSHost PROPERTIES
   OUTPUT_NAME crypto_tls_host EXPORT_NAME TLSHost
   C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO
@@ -104,7 +104,7 @@ endif()
 # buffers and borrowed Crypto TLS callback descriptors: NO GmSSL/static TLS,
 # no native sockets, no CNet/Salts dependency and no extra native shared DSO.
 add_library(CryptoTLSCipherBIO STATIC src/crypto_tls_cipher_bio.c)
-add_library(Crypto::TLSCipherBIO ALIAS CryptoTLSCipherBIO)
+add_library(Salts::TLSCipherBIO ALIAS CryptoTLSCipherBIO)
 set_target_properties(CryptoTLSCipherBIO PROPERTIES
   OUTPUT_NAME crypto_tls_cipher_bio EXPORT_NAME TLSCipherBIO
   C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO
@@ -124,7 +124,7 @@ install(TARGETS CryptoTLSProvider CryptoTLSHost CryptoTLSCipherBIO CryptoProvide
 install(FILES include/crypto/tls.h include/crypto/tls_ext.h include/crypto/tls_peer.h include/crypto/cipher_bio.h include/crypto/loader.h include/crypto/provider.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/crypto)
 install(EXPORT CryptoTLSTargets
-  NAMESPACE Crypto:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
+  NAMESPACE Salts:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)
 configure_package_config_file(
   cmake/CryptoTLSConfig.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/CryptoTLSConfig.cmake"
