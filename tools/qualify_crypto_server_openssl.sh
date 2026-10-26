@@ -27,7 +27,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for proto in 12 13; do
+if [[ "${CRYPTO_TLS_TEST_HRR_ONLY:-0}" == 1 ]]; then
+  protocols=(13)
+  peer_mode="default-hrr"
+else
+  protocols=(12 13)
+  peer_mode="single-p256"
+fi
+
+for proto in "${protocols[@]}"; do
   port="$((base_port + proto - 12))"
   server_log="$work/reverse-server-$proto.private"
   openssl_log="$work/reverse-openssl-$proto.private"
@@ -41,7 +49,7 @@ for proto in 12 13; do
     echo "Crypto TLS $proto test server did not enter accept" >&2; exit 1;
   }
 
-  if ! python3 - "$proto" "$port" "$work/ca.pem" "$openssl_log" <<'PY'
+  if ! python3 - "$proto" "$port" "$work/ca.pem" "$openssl_log" "$peer_mode" <<'PY'
 from pathlib import Path
 import os
 import re
@@ -49,7 +57,7 @@ import signal
 import subprocess
 import sys
 
-protocol, port, ca_path, logfile = sys.argv[1:]
+protocol, port, ca_path, logfile, peer_mode = sys.argv[1:]
 args = [
     "openssl", "s_client", "-connect", "127.0.0.1:" + port,
     "-servername", "localhost",
@@ -62,11 +70,12 @@ if protocol == "12":
     args += ["-tls1_2", "-cipher", "ECDHE-RSA-AES128-GCM-SHA256",
              "-sigalgs", "rsa_pkcs1_sha256"]
 else:
-    # Isolate the already-admitted P-256 key share first. The default
-    # OpenSSL groups/HelloRetryRequest path remains a separate mandatory
-    # gate and must not be counted as passing based on this constrained case.
     args += ["-tls1_3", "-ciphersuites", "TLS_AES_128_GCM_SHA256",
-             "-sigalgs", "rsa_pss_rsae_sha256", "-groups", "P-256"]
+             "-sigalgs", "rsa_pss_rsae_sha256"]
+    if peer_mode == "single-p256":
+        args += ["-groups", "P-256"]  # normal single-keyshare qualification
+    elif peer_mode != "default-hrr":
+        raise SystemExit("invalid peer_mode")
 with Path(logfile).open("wb") as output:
     proc = subprocess.Popen(
         args, stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT,
@@ -113,12 +122,24 @@ with Path(logfile).open("wb") as output:
         # These are *literal fixed reason categories*, never raw OpenSSL
         # output (which contains ephemeral exported secrets).
         reason_flags = [reason for reason in safe_errors if reason in log.lower()]
-        print("Reverse OpenSSL TLS {} failed: rc={} verified={} stages={} reasons={}".format(
-            protocol, proc.returncode,
-            ("verify return code: 0" in log.lower()
-             or "verification: ok" in log.lower()),
-            phase_class, reason_flags
-        ), file=sys.stderr)
+        # Extract ONLY cryptographic diagnostic reason identifiers, not
+        # OpenSSL's raw log which contains private keying material.
+        detail = []
+        for line in log.splitlines():
+            m = re.search(
+                r"error:[0-9a-fA-F]+:SSL routines:(?:[A-Za-z0-9_-]*:)?"
+                r"([A-Za-z][A-Za-z0-9 _-]{1,79})", line
+            )
+            if m:
+                detail.append(m.group(1).strip().lower())
+        print(
+            "Reverse OpenSSL TLS {} mode={} failed rc={} verified={} stages={} reasons={} details={}".format(
+                protocol, peer_mode, proc.returncode,
+                ("verify return code: 0" in log.lower()
+                 or "verification: ok" in log.lower()),
+                phase_class, reason_flags, detail[-3:]
+            ), file=sys.stderr
+        )
         sys.exit(1)
 PY
   then
@@ -151,5 +172,5 @@ PY
   # Do NOT write the TLS export secret to CI logs; later add a separate
   # independently verified peer exporter comparison after handshake passes.
   rm -f "$openssl_log" "$server_log" "$secret"
-  echo "Crypto shared TLS server vs OpenSSL3 s_client TLS $proto handshake and HTTP PASS"
+  echo "Crypto shared TLS server vs OpenSSL3 s_client TLS $proto ($peer_mode) handshake and HTTP PASS"
 done
