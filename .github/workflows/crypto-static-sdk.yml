@@ -1,0 +1,228 @@
+name: Salts Crypto single static archive SDK
+
+on:
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "src/**"
+      - "include/**"
+      - "vendor/libecc/**"
+      - "tests/**"
+      - "tools/audit_static_crypto.py"
+      - "tools/merge_static_crypto.cmake"
+      - "providers/gmssl/**"
+      - ".github/workflows/crypto-static-sdk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-static-sdk:
+    name: "Salts::Crypto static / ${{ matrix.os }}"
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Verify and patch exact GmSSL 3.2 sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          test "$(git -C _gmssl-upstream rev-parse HEAD)" = 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/static-gmssl-source.json" \
+            -P tools/assemble_gmssl.cmake
+      - name: Build private provider source input
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            gen=(-G 'Visual Studio 18 2026' -A x64)
+          else
+            gen=(-G Ninja)
+          fi
+          cmake -S _gmssl-upstream -B build-gmssl "${gen[@]}" \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF -DENABLE_TLS=ON -DENABLE_SECP256R1=ON \
+            -DENABLE_SECP384R1=ON -DENABLE_SHA2=ON -DENABLE_AES=ON \
+            -DENABLE_AES_CCM=OFF -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF \
+            -DENABLE_GHASH=OFF -DENABLE_SM9=OFF -DENABLE_CMS=OFF \
+            -DENABLE_LMS=OFF -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF \
+            -DENABLE_KYBER=OFF -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl --config Release --target gmssl --parallel 2
+      - name: Build and install only Salts::Crypto static archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            gen=(-G 'Visual Studio 18 2026' -A x64)
+            provider="$GITHUB_WORKSPACE/build-gmssl/bin/Release/gmssl.lib"
+          else
+            gen=(-G Ninja)
+            provider="$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
+          fi
+          test -s "$provider"
+          cmake -S . -B build-crypto "${gen[@]}" \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DCRYPTO_GMSSL_STATIC=$provider"
+          cmake --build build-crypto --config Release --parallel 2
+          ctest --test-dir build-crypto -C Release --no-tests=error --output-on-failure
+          cmake --install build-crypto --config Release --prefix "$RUNNER_TEMP/crypto-static"
+          python3 tools/audit_static_crypto.py \
+            --prefix "$RUNNER_TEMP/crypto-static" --report build-crypto/static.json
+      - name: Independent installed C11 and C++17 and real TLS1.2/1.3 + CipherBIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            gen=(-G 'Visual Studio 18 2026' -A x64)
+            peer=()
+          else
+            gen=(-G Ninja)
+            peer=(-DCRYPTO_SDK_ENABLE_OPENSSL_PEER=ON -DCRYPTO_SDK_ENABLE_INDEPENDENT_EXPORTER=ON)
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              root="$(brew --prefix openssl@3)"
+              peer+=("-DOPENSSL_ROOT_DIR=$root")
+              export PATH="$root/bin:$PATH"
+            fi
+          fi
+          cmake -S tests/owner -B build-owner "${gen[@]}" \
+            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-static"
+          cmake --build build-owner --config Release --parallel 2
+          ctest --test-dir build-owner -C Release --no-tests=error --output-on-failure
+          cmake -S tests/sdk -B build-sdk "${gen[@]}" \
+            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-static" \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON "${peer[@]}" \
+            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
+          cmake --build build-sdk --config Release --parallel 2
+          ctest --test-dir build-sdk -C Release --no-tests=error --output-on-failure
+      - name: Independent OpenSSL3 CA/SAN and HRR/exporter negative gates
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            export PATH="$(brew --prefix openssl@3)/bin:$PATH"
+          fi
+          openssl version | grep -q '^OpenSSL 3[.]'
+          bash tools/qualify_crypto_shared_openssl.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_client" "$RUNNER_TEMP/static-peer" 9740
+          bash tools/qualify_crypto_exporter_openssl.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_client" "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_exporter_oracle" "$RUNNER_TEMP/static-peer" 9830
+          bash tools/qualify_crypto_server_openssl.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" "$RUNNER_TEMP/static-peer" 9900
+          bash tools/qualify_crypto_server_api_openssl.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_api_peer_client" "$RUNNER_TEMP/static-peer" 9950
+          CRYPTO_TLS_TEST_HRR_ONLY=1 bash tools/qualify_crypto_server_openssl.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" "$RUNNER_TEMP/static-peer" 9920
+          bash tools/qualify_crypto_hrr_ccs_negative.sh "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_api_peer_client" "$RUNNER_TEMP/static-peer" 9970
+      - name: Relocation / source-independent import
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv "$RUNNER_TEMP/crypto-static" "$RUNNER_TEMP/crypto-relocated"
+          cmake -S tests/owner -B build-owner-relocated \
+            "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-relocated" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-owner-relocated --config Release --parallel 2
+          ctest --test-dir build-owner-relocated -C Release --no-tests=error --output-on-failure
+          python3 tools/audit_static_crypto.py \
+            --prefix "$RUNNER_TEMP/crypto-relocated" --report build-crypto/relocated.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-static-${{ matrix.os }
+          path: |
+            build-crypto/static.json
+            build-crypto/relocated.json
+            build-crypto/Testing/Temporary/LastTest.log
+            build-sdk/Testing/Temporary/LastTest.log
+            build-owner/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
+
+  linux-source-sanitizers:
+    name: "Static Crypto source ${{ matrix.mode }"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [asan-ubsan-lsan, tsan]
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      LSAN_OPTIONS: exitcode=23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Assemble source and verify provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/source-sanitized.json" \
+            -P tools/assemble_gmssl.cmake
+      - name: Fully instrument provider, archive, and installed C11 consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.mode }" == tsan ]]; then
+            flags="-O1 -g -fno-omit-frame-pointer -fsanitize=thread"
+          else
+            flags="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
+          fi
+          cmake -S _gmssl-upstream -B build-gmssl -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS=$flags" \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_TLS=ON -DENABLE_SECP256R1=ON -DENABLE_SECP384R1=ON \
+            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
+            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl --target gmssl --parallel 2
+          cmake -S . -B build-crypto -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON \
+            "-DCMAKE_C_FLAGS=$flags" "-DCMAKE_CXX_FLAGS=$flags" \
+            "-DCMAKE_EXE_LINKER_FLAGS=$flags" \
+            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DCRYPTO_GMSSL_STATIC=$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
+          cmake --build build-crypto --parallel 2
+          ctest --test-dir build-crypto --no-tests=error --output-on-failure \
+            --timeout 120 --repeat until-fail:3
+          cmake --install build-crypto --prefix "$RUNNER_TEMP/crypto-sanitized"
+          python3 tools/audit_static_crypto.py \
+            --prefix "$RUNNER_TEMP/crypto-sanitized" --report build-crypto/static.json
+          cmake -S tests/sdk -B build-sdk -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS=$flags" \
+            "-DCMAKE_EXE_LINKER_FLAGS=$flags" \
+            "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-sanitized" \
+            -DCRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO_RACE=ON \
+            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
+          cmake --build build-sdk --parallel 2
+          ctest --test-dir build-sdk --no-tests=error --output-on-failure \
+            --timeout 120 --repeat until-fail:3
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-source-${{ matrix.mode }
+          path: |
+            build-crypto/static.json
+            build-crypto/Testing/Temporary/LastTest.log
+            build-sdk/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
