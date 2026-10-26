@@ -40,6 +40,16 @@ target_compile_definitions(CryptoTLSProvider PRIVATE
   ENABLE_SHA1 ENABLE_SHA2 ENABLE_AES)
 target_link_libraries(CryptoTLSProvider PRIVATE PrivateGmSSL)
 
+# Test-only, private TLS handshake metadata. Never enable in an installed
+# production/provider build and NEVER disclose TLS record contents or keys.
+option(CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE
+  "Emit bounded TLS state/type/length diagnostics on handshake failure" OFF)
+if(CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE)
+  target_compile_definitions(CryptoTLSProvider PRIVATE
+    CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE=1)
+endif()
+
+
 # One physical shared image owns the private GmSSL archive. The SM3
 # Crypto::Provider CMake view is an INTERFACE alias of Crypto::TLS, not a
 # second SHARED/STATIC binary. Export both views from one target set.
