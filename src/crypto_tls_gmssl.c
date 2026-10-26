@@ -232,6 +232,20 @@ crypto_tls_result crypto_tls_session_create(
         || tls_ctx_set_supported_groups(&s->context, &group, 1u) != 1
         || tls_ctx_set_signature_algorithms(&s->context, signatures, sig_count) != 1)
         goto fail;
+    /* RFC 5746 secure renegotiation *signaling* on the initial TLS 1.2
+     * server handshake. Independent OpenSSL3 clients send
+     * TLS_EMPTY_RENEGOTIATION_INFO_SCSV and require an empty
+     * renegotiation_info response. GmSSL's known-good native CLI enables
+     * tls12_ctx_set_renegotiation_info() before tls_init(), but the
+     * opaque server adapter previously omitted it.
+     *
+     * This DOES NOT allow application-triggered renegotiation. Keep the
+     * original signature, transcript/Finished checks and CA/SAN policy.
+     */
+    if (options->role == CRYPTO_TLS_SERVER
+        && options->protocol == CRYPTO_TLS_1_2
+        && tls12_ctx_set_renegotiation_info(&s->context, 1) != 1)
+        goto fail;
     if (options->ca_file && options->ca_file[0]
         && tls_ctx_set_ca_certificates(&s->context, options->ca_file, depth) != 1)
         goto fail;
