@@ -48,6 +48,34 @@ The facade's TLS session ownership API remains independent of that deleted
 SM3 ABI. Only the explicitly published GmSSL headers are supported by this
 installed SDK; other GmSSL internal headers remain private.
 
+## Source layout and provenance
+
+`providers/gmssl/src/` and `providers/gmssl/include/gmssl/` contain the
+13 canonical GmSSL extension source/header blobs. `providers/gmssl/patches/`
+contains **only** the immutable 40 historical patch scripts, not C/header
+implementations. Historical patch scripts apply through a temporary source
+assembly directory; original source identity and the 95-entry handoff archive
+digest are checked independently.
+
+See [the current GmSSL source README](providers/gmssl/README.md) and
+[import status](providers/gmssl/provenance/IMPORT-STATUS.md).
+`providers/gmssl/provenance/HISTORICAL-HANDOFF.md` is the byte-identical
+original README; its old repository-creation instructions are historical,
+not current build instructions. The provenance manifest is likewise immutable.
+
+## Consumer example
+
+```c
+#include <crypto/sha256.h>
+#include <crypto/ed448.h>
+#include <gmssl/sm3.h>
+```
+
+Link only `Salts::Crypto`. Only `gmssl/sm3.h` is installed as a direct
+GmSSL API surface in the current SDK; other internal GmSSL headers are not
+a supported consumer contract without separate acceptance. Neither the
+generic `crypto/provider.h` nor `salts/crypto.h` exists.
+
 ## Required exact-head acceptance
 
 The crypto-static-sdk.yml pipeline covers installed C11 and C++17 consumers,

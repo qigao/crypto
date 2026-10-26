@@ -59,6 +59,22 @@ class GmSSLImportTest(unittest.TestCase):
                          if f.is_file() and f.suffix in (".c", ".h"))
         self.assertEqual(sources, [], sources)
 
+    def test_historical_readme_relocation_preserves_original_archive(self):
+        historical = verifier.ROOT / verifier.HISTORICAL_README
+        current = verifier.ROOT / verifier.README
+        self.assertTrue(historical.is_file())
+        self.assertTrue(current.is_file())
+        self.assertNotEqual(historical.read_bytes(), current.read_bytes())
+        source_bytes = verifier.git_content(verifier.HISTORICAL_README)
+        self.assertEqual(
+            verifier.git_blob_sha(source_bytes),
+            verifier.EXPECTED_BLOBS[verifier.HISTORICAL_README])
+        _, payload = verifier.verify()
+        # Original handoff tar keeps the original logical README pathname,
+        # not a second physical copy under the active providers/gmssl/ tree.
+        self.assertEqual(payload[verifier.README], source_bytes)
+        self.assertNotIn(verifier.HISTORICAL_README, payload)
+
     def test_traversal_noncanonical_and_unclassified_files_rejected(self):
         for path in (
             "../bad", "tests/../../bad", "/absolute", "tests//twice.c",

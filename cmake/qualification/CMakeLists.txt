@@ -11,8 +11,9 @@ if(NOT DEFINED GMSSL_ASSEMBLED_LIBRARY OR
    NOT EXISTS "${GMSSL_ASSEMBLED_LIBRARY}")
   message(FATAL_ERROR "Need compiled private GmSSL 3.2 static provider")
 endif()
-# Test-local binary import. This is NOT a public GmSSLConfig package and
-# cannot be shipped by Crypto. One provider owner must be qualified later.
+# Test-local binary import of the already verified patched GmSSL static
+# archive. This is NOT an installed GmSSL package or consumer target:
+# qualification runs before the staging objects enter Salts::Crypto.
 add_library(GmSSLPrivateQualification STATIC IMPORTED)
 set_target_properties(GmSSLPrivateQualification PROPERTIES
   IMPORTED_LOCATION "${GMSSL_ASSEMBLED_LIBRARY}"

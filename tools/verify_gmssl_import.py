@@ -22,14 +22,15 @@ ORIGIN = "providers/gmssl"
 MANIFEST = f"{ORIGIN}/provenance/ownership-manifest.json"
 ORDER = f"{ORIGIN}/provenance/patch-order.json"
 LICENSE = f"{ORIGIN}/LICENSE"
-README = f"{ORIGIN}/README.md"
+README = f"{ORIGIN}/README.md"  # logical path in original historical tar
+HISTORICAL_README = f"{ORIGIN}/provenance/HISTORICAL-HANDOFF.md"
 EXPECTED_ARCHIVE_SHA256 = (
     "586bbee98e7a6ba83ab13549d369d01fc341788ab3c53be5372d2bc063da4601"
 )
 EXPECTED_BLOBS = {
     MANIFEST: "55c282332aaddf3b555ba10dba7100ec839fe51a",
     LICENSE: "d9a10c0d8e868ebf8da0b3dc95bb0be634c34bfe",
-    README: "77c49542ebfc1b5713eeacf016f778ad0460b673",
+    HISTORICAL_README: "77c49542ebfc1b5713eeacf016f778ad0460b673",
 }
 
 
@@ -191,7 +192,10 @@ def verify() -> tuple[dict, dict[str, bytes]]:
     ):
         raise ValueError("GmSSL source patch ordering or coverage differs from port")
     payload[LICENSE] = git_content(LICENSE)
-    payload[README] = git_content(README)
+    # Keep the original 95-entry artifact byte-identical: its historical
+    # README *archive name* differs from the current checked-in physical path.
+    # No historical content is modified and no redundant repository copy exists.
+    payload[README] = git_content(HISTORICAL_README)
     payload[MANIFEST] = git_content(MANIFEST)
     if len(payload) != 95:
         raise ValueError("expected 92 provider payloads and 3 metadata files")

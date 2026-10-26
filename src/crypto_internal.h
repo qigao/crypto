@@ -1,5 +1,5 @@
-#ifndef SALTS_UTILS_CRYPTO_INTERNAL_H
-#define SALTS_UTILS_CRYPTO_INTERNAL_H
+#ifndef CRYPTO_INTERNAL_H_INCLUDED
+#define CRYPTO_INTERNAL_H_INCLUDED
 
 #include <stddef.h>
 
@@ -13,4 +13,4 @@ static inline void salts_crypto_secure_zero(void *buffer, size_t size) {
   }
 }
 
-#endif /* SALTS_UTILS_CRYPTO_INTERNAL_H */
+#endif /* CRYPTO_INTERNAL_H_INCLUDED */
