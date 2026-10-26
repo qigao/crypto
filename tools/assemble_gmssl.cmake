@@ -109,6 +109,58 @@ vcpkg_replace_string(
   "add_library(gmssl \${src})"
   "add_library(gmssl STATIC \${src})")
 
+# All 40 historical adaptation scripts and the imported backport bytes are
+# immutable and provenance-checked. Only patch scripts live under patches/ in
+# the checked-in Crypto repository; the 13 real C/header sources are owned by
+# providers/gmssl/src and providers/gmssl/include/gmssl.
+#
+# Reproduce original CMAKE_CURRENT_LIST_DIR-relative script behavior in an
+# ephemeral, fail-closed sandbox. Never copy the backports back into the
+# repository's tracked patches/ directory or silently pick another source.
+set(_patch_stage "${SOURCE_PATH}/.crypto-patch-stage")
+if(EXISTS "${_patch_stage}")
+  message(FATAL_ERROR "Refusing stale GmSSL source overlay staging directory")
+endif()
+file(MAKE_DIRECTORY "${_patch_stage}/backports")
+file(COPY "${_patch_root}/" DESTINATION "${_patch_stage}")
+set(_overlay_names
+  aes_key_wrap.c
+  aes_key_wrap.h
+  des.c
+  des.h
+  md5.c
+  md5.h
+  rsa_components.h
+  rsa_ext.c
+  rsa_ext.h
+  rsa_private_op.c
+  tls13-handshake-reader.h
+  secp384r1_verify.c
+  secp384r1_verify.h)
+list(LENGTH _overlay_names _overlay_count)
+if(NOT _overlay_count EQUAL 13)
+  message(FATAL_ERROR "Missing reviewed GmSSL backport list")
+endif()
+foreach(_file IN LISTS _overlay_names)
+  if(_file MATCHES "[.]h$")
+    set(_origin "${_crypto_root}/providers/gmssl/include/gmssl/${_file}")
+  else()
+    set(_origin "${_crypto_root}/providers/gmssl/src/${_file}")
+  endif()
+  if(NOT EXISTS "${_origin}")
+    message(FATAL_ERROR "Missing canonical GmSSL implementation ${_origin}")
+  endif()
+  if(_file MATCHES "^secp384r1_verify[.]")
+    file(COPY "${_origin}" DESTINATION "${_patch_stage}/backports")
+  else()
+    file(COPY "${_origin}" DESTINATION "${_patch_stage}")
+  endif()
+endforeach()
+unset(_origin)
+unset(_overlay_count)
+unset(_overlay_names)
+unset(_file)
+
 math(EXPR _last "${_n} - 1")
 foreach(_i RANGE 0 ${_last})
   string(JSON _script GET "${_order}" ordered_cmake_source_adaptations ${_i})
@@ -119,9 +171,17 @@ foreach(_i RANGE 0 ${_last})
   if(NOT EXISTS "${_crypto_root}/${_script}")
     message(FATAL_ERROR "Missing original source patch: ${_script}")
   endif()
-  include("${_crypto_root}/${_script}")
+  get_filename_component(_script_name "${_script}" NAME)
+  include("${_patch_stage}/${_script_name}")
   message(STATUS "GmSSL source patch ${_i}: ${_script}")
 endforeach()
+# No temporary copies of source overlays are retained after the 40 patches.
+file(REMOVE_RECURSE "${_patch_stage}")
+if(EXISTS "${_patch_stage}")
+  message(FATAL_ERROR "Could not remove temporary GmSSL source overlay staging")
+endif()
+unset(_patch_stage)
+unset(_script_name)
 
 # Apply reviewed Crypto-only hardening strictly AFTER the 40 original source
 # transformations. Frozen source blobs and patch ordering remain unchanged.

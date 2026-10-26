@@ -1,6 +1,6 @@
 #include <crypto/sha256.h>
 #include <crypto/ed448.h>
-#include <crypto/provider.h>
+#include <gmssl/sm3.h>
 #include <stdio.h>
 #include <string.h>
 #define VERIFY(expr) do { if (!(expr)) { \
@@ -55,7 +55,11 @@ int main(void) {
     VERIFY(memcmp(digest,sha256_abc,sizeof(digest))==0);
     VERIFY(salts_crypto_sha256_final(&ctx,digest)==SALTS_CRYPTO_ESTATE);
     VERIFY(salts_crypto_sha256(NULL,1,digest)==SALTS_CRYPTO_EINVAL);
-    VERIFY(crypto_provider_sm3((const uint8_t*)"abc",3,digest,sizeof(digest))==CRYPTO_PROVIDER_OK);
+    /* Direct GmSSL SM3, linked from the sole Salts::Crypto archive. */
+    SM3_CTX sm3;
+    sm3_init(&sm3);
+    sm3_update(&sm3, (const uint8_t*)"abc", 3u);
+    sm3_finish(&sm3, digest);
     VERIFY(memcmp(digest,sm3_abc,sizeof(digest))==0);
     VERIFY(salts_crypto_ed448_public_key(rfc8032_private_key,pub)==SALTS_CRYPTO_OK);
     VERIFY(memcmp(pub,rfc8032_public_key,sizeof(pub))==0);

@@ -28,7 +28,6 @@ add_subdirectory(vendor/libecc)
 # No separate libecc archive; only its required Ed448 code is compiled.
 # SHA256 is the existing, pinned GmSSL implementation, not a duplicate libecc SHA.
 add_library(salts_crypto STATIC
-  src/provider_sm3.c
   src/crypto_tls_gmssl.c
   src/crypto_tls_cipher_bio.c
   src/crypto_ed448.c
@@ -84,6 +83,10 @@ install(TARGETS salts_crypto EXPORT SaltsCryptoTargets
 install(DIRECTORY include/crypto
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   FILES_MATCHING PATTERN "*.h")
+# Expose the vetted GmSSL SM3 API directly from the same static archive;
+# no Crypto Provider header, trampoline or independently installed GmSSL lib.
+install(FILES "${CRYPTO_GMSSL_SOURCE}/include/gmssl/sm3.h"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/gmssl")
 install(FILES "${_libecc}/LICENSE"
   DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/Crypto/libecc)
 

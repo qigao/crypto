@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 MANDATORY = (
-    "crypto_provider_sm3",
+    "sm3_init", "sm3_update", "sm3_finish",
     "crypto_tls_session_handshake",
     "crypto_tls_session_export_v1_2",
     "crypto_tls_cipher_bio_create",
@@ -22,7 +22,11 @@ MANDATORY = (
     "salts_crypto_libecc_get_random",
     "sha256_init", "sha256_update", "sha256_finish",
 )
-FORBIDDEN = ("get_unsafe_random", "salts_crypto_libecc_salts_crypto_libecc_get_random")
+FORBIDDEN = (
+    "get_unsafe_random", "salts_crypto_libecc_salts_crypto_libecc_get_random",
+    "crypto_provider_sm3", "crypto_provider_runtime_abi",
+    "crypto_provider_abi_0_1_required",
+)
 
 def inspect(prefix: Path) -> dict:
     prefix = prefix.resolve(strict=True)
@@ -47,6 +51,10 @@ def inspect(prefix: Path) -> dict:
             raise ValueError("missing canonical installed Crypto header: " + name)
     if (prefix / "include" / "salts" / "crypto.h").exists():
         raise ValueError("noncanonical salts/crypto.h header in installed SDK")
+    if (prefix / "include" / "crypto" / "provider.h").exists():
+        raise ValueError("removed generic Crypto Provider header still installed")
+    if not (prefix / "include" / "gmssl" / "sm3.h").is_file():
+        raise ValueError("direct GmSSL SM3 header missing from installed SDK")
     cfg = lib / "cmake" / "Crypto" / "CryptoTargets.cmake"
     if not cfg.is_file():
         raise ValueError("missing installed CryptoTargets.cmake")
