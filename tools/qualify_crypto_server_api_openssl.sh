@@ -50,6 +50,7 @@ for variant in 12:p256 13:p256 13:hrr; do
     # Only fixed diagnostic metadata may leave this private work directory.
     grep '^CRYPTO_OPENSSL_API_PEER_RESULT ' "$client_log" >&2 || true
     grep '^CRYPTO_TLS_PRIVATE_STATE ' "$server_log" | tail -25 >&2 || true
+    grep '^CRYPTO_TLS_PRIVATE_HRR_STAGE ' "$server_log" | tail -25 >&2 || true
     grep '^CRYPTO_TLS_PRIVATE_HANDSHAKE_DIAG ' "$server_log" >&2 || true
     echo "Crypto/OpenSSL3 SSL_connect $variant failed; no exporter parity claimed" >&2
     exit 1
@@ -58,6 +59,7 @@ for variant in 12:p256 13:p256 13:hrr; do
     server_pid=""
     grep '^CRYPTO_OPENSSL_API_PEER_RESULT ' "$client_log" >&2 || true
     grep '^CRYPTO_TLS_PRIVATE_STATE ' "$server_log" | tail -25 >&2 || true
+    grep '^CRYPTO_TLS_PRIVATE_HRR_STAGE ' "$server_log" | tail -25 >&2 || true
     echo "Crypto TLS $variant server did not settle successfully" >&2
     exit 1
   fi
