@@ -167,3 +167,52 @@ if(CRYPTO_SDK_ENABLE_HOST_LEASE)
 elseif(CRYPTO_SDK_ENABLE_HOST_LEASE_RACE)
   message(FATAL_ERROR "Host DSO lease race requires CRYPTO_SDK_ENABLE_HOST_LEASE")
 endif()
+
+# Crypto CipherBIO is a separate installed C11 host-only STATIC helper:
+# it embeds zero GmSSL code and never adds a second Crypto shared image.
+option(CRYPTO_SDK_ENABLE_CIPHER_BIO
+  "Qualify bounded CNet-style TLS ciphertext feed/take with real TLS" OFF)
+if(CRYPTO_SDK_ENABLE_CIPHER_BIO)
+  if(NOT TARGET Crypto::TLSCipherBIO)
+    message(FATAL_ERROR "Installed Crypto::TLSCipherBIO C11 host helper required")
+  endif()
+  add_executable(crypto_sdk_cipher_bio cipher-bio.c)
+  set_target_properties(crypto_sdk_cipher_bio PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+  target_link_libraries(crypto_sdk_cipher_bio
+    PRIVATE Crypto::TLS Crypto::TLSCipherBIO)
+  target_compile_definitions(crypto_sdk_cipher_bio PRIVATE
+    "SDK_CA_FILE=\"${_ca}\""
+    "SDK_SERVER_CERT_FILE=\"${_cert}\""
+    "SDK_SERVER_KEY_FILE=\"${_key}\"")
+  add_test(NAME crypto.installed.cipher_bio_tls12_tls13
+    COMMAND crypto_sdk_cipher_bio)
+  set_tests_properties(crypto.installed.cipher_bio_tls12_tls13
+    PROPERTIES TIMEOUT 120)
+  if(WIN32)
+    add_custom_command(TARGET crypto_sdk_cipher_bio POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:Crypto::TLS>"
+        "$<TARGET_FILE_DIR:crypto_sdk_cipher_bio>"
+      VERBATIM)
+  endif()
+endif()
+
+# Source TSan: independently cancelled borrowed IO callback, no fixture mocks.
+option(CRYPTO_SDK_ENABLE_CIPHER_BIO_RACE
+  "Run true C11 CipherBIO borrowed-callback cancellation race under TSan" OFF)
+if(CRYPTO_SDK_ENABLE_CIPHER_BIO_RACE)
+  if(NOT CRYPTO_SDK_ENABLE_CIPHER_BIO OR NOT UNIX)
+    message(FATAL_ERROR "CipherBIO race requires installed host BIO and native pthreads")
+  endif()
+  find_package(Threads REQUIRED)
+  add_executable(crypto_sdk_cipher_bio_cancel_race cipher-bio-cancel-race.c)
+  set_target_properties(crypto_sdk_cipher_bio_cancel_race PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+  target_link_libraries(crypto_sdk_cipher_bio_cancel_race
+    PRIVATE Crypto::TLSCipherBIO Threads::Threads)
+  add_test(NAME crypto.installed.cipher_bio_cancel_race
+    COMMAND crypto_sdk_cipher_bio_cancel_race)
+  set_tests_properties(crypto.installed.cipher_bio_cancel_race
+    PROPERTIES TIMEOUT 90)
+endif()

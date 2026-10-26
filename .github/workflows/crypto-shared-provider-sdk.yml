@@ -87,6 +87,8 @@ jobs:
           cmake --install build-provider --config Release \
             --prefix "$GITHUB_WORKSPACE/_installed"
           test -s "$GITHUB_WORKSPACE/_installed/include/crypto/tls.h"
+          test -s "$GITHUB_WORKSPACE/_installed/include/crypto/cipher_bio.h"
+          test -s "$GITHUB_WORKSPACE/_installed/lib/cmake/CryptoTLS/CryptoTLSTargets.cmake"
           test -s "$GITHUB_WORKSPACE/_installed/lib/cmake/CryptoTLS/CryptoTLSTargets.cmake"
           if [[ "$RUNNER_OS" != Windows ]]; then
             test -s "$GITHUB_WORKSPACE/_installed/lib/libcrypto_tls.$(
@@ -107,9 +109,10 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/_installed" \
             -DCRYPTO_SDK_ENABLE_HOST_LEASE=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON \
             "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
           cmake --build build-sdk --config Release --parallel 2
-          test "$(ctest --test-dir build-sdk -C Release -N | sed -n 's/^Total Tests: //p')" = 3
+          test "$(ctest --test-dir build-sdk -C Release -N | sed -n 's/^Total Tests: //p')" = 4
           ctest --test-dir build-sdk -C Release --output-on-failure \
             --no-tests=error --timeout 90
       - name: Verify ELF public export surface excludes all GmSSL APIs

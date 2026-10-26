@@ -100,12 +100,28 @@ elseif(UNIX)
   target_link_libraries(CryptoTLSHost PUBLIC "${CMAKE_DL_LIBS}")
 endif()
 
-install(TARGETS CryptoTLSProvider CryptoTLSHost CryptoProviderView
+# Pure C11, host-side, fixed ciphertext BIO. It owns only two bounded
+# buffers and borrowed Crypto TLS callback descriptors: NO GmSSL/static TLS,
+# no native sockets, no CNet/Salts dependency and no extra native shared DSO.
+add_library(CryptoTLSCipherBIO STATIC src/crypto_tls_cipher_bio.c)
+add_library(Crypto::TLSCipherBIO ALIAS CryptoTLSCipherBIO)
+set_target_properties(CryptoTLSCipherBIO PROPERTIES
+  OUTPUT_NAME crypto_tls_cipher_bio EXPORT_NAME TLSCipherBIO
+  C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO
+  POSITION_INDEPENDENT_CODE YES)
+target_include_directories(CryptoTLSCipherBIO PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+if(MSVC)
+  target_compile_options(CryptoTLSCipherBIO PRIVATE /experimental:c11atomics)
+endif()
+
+install(TARGETS CryptoTLSProvider CryptoTLSHost CryptoTLSCipherBIO CryptoProviderView
   EXPORT CryptoTLSTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES include/crypto/tls.h include/crypto/tls_ext.h include/crypto/tls_peer.h include/crypto/loader.h include/crypto/provider.h
+install(FILES include/crypto/tls.h include/crypto/tls_ext.h include/crypto/tls_peer.h include/crypto/cipher_bio.h include/crypto/loader.h include/crypto/provider.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/crypto)
 install(EXPORT CryptoTLSTargets
   NAMESPACE Crypto:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CryptoTLS)

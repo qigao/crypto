@@ -96,10 +96,11 @@ jobs:
             -DCRYPTO_SDK_ENABLE_OPENSSL_PEER=ON \
             -DCRYPTO_SDK_ENABLE_INDEPENDENT_EXPORTER=ON \
             -DCRYPTO_SDK_ENABLE_HOST_LEASE=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON \
             "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
           cmake --build build-sdk-asan --parallel 2
           test "$(ctest --test-dir build-sdk-asan -N |
-            sed -n 's/^Total Tests: //p')" = 3
+            sed -n 's/^Total Tests: //p')" = 4
       - name: Repeat native TLS 1.2/1.3 facade and standalone DSO unload tests
         shell: bash
         run: |
