@@ -307,7 +307,20 @@ crypto_tls_result crypto_tls_session_handshake(crypto_tls_session *s)
              * any TLS handshake I/O has started, even if it later fails.
              */
             s->handshake_started = 1;
+#ifdef CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE
+            int observed_state_before = s->connection.handshake_state;
+#endif
             result = tls_do_handshake(&s->connection);
+#ifdef CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE
+            if (!s->connection.is_client) {
+                int after = s->connection.handshake_state;
+                if (after != observed_state_before || result != TLS_ERROR_RECV_AGAIN) {
+                    fprintf(stderr,
+                        "CRYPTO_TLS_PRIVATE_STATE protocol=%d before=%d after=%d result=%d\\n",
+                        s->connection.protocol, observed_state_before, after, result);
+                }
+            }
+#endif
 #ifdef CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE
             if (result != 1 &&
                 result != TLS_ERROR_SEND_AGAIN &&
