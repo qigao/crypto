@@ -42,7 +42,7 @@ int salts_crypto_sha256_update(salts_crypto_sha256_ctx_t *context, const void *d
   if (!impl->initialized) return SALTS_CRYPTO_ESTATE;
 
   while (data_size != 0u) {
-    const u32 chunk = data_size > UINT32_MAX ? UINT32_MAX : (u32)data_size;
+    const size_t chunk = data_size > UINT32_MAX ? UINT32_MAX : data_size;
     sha256_update(&impl->native, cursor, chunk);
     cursor += chunk;
     data_size -= chunk;

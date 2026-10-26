@@ -41,7 +41,7 @@ int salts_crypto_random_bytes(void *buffer, size_t length) {
 #elif defined(__linux__)
   while (length != 0u) {
     const size_t chunk =
-        length > SALTS_PLATFORM_RANDOM_CHUNK_BYTES ? SALTS_PLATFORM_RANDOM_CHUNK_BYTES : length;
+        length > CRYPTO_RANDOM_CHUNK_BYTES ? CRYPTO_RANDOM_CHUNK_BYTES : length;
     const ssize_t received = getrandom(cursor, chunk, 0);
     if (received < 0) {
       if (errno == EINTR) continue;
@@ -62,7 +62,7 @@ int salts_crypto_random_bytes(void *buffer, size_t length) {
     if (descriptor < 0) return -1;
     while (length != 0u) {
       const size_t chunk =
-          length > SALTS_PLATFORM_RANDOM_CHUNK_BYTES ? SALTS_PLATFORM_RANDOM_CHUNK_BYTES : length;
+          length > CRYPTO_RANDOM_CHUNK_BYTES ? CRYPTO_RANDOM_CHUNK_BYTES : length;
       const ssize_t received = read(descriptor, cursor, chunk);
       if (received < 0) {
         const int error = errno;
