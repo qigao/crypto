@@ -3,6 +3,7 @@
  */
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
+#include <crypto/tls_peer.h>
 #include <gmssl/tls.h>
 
 #include <limits.h>
@@ -494,6 +495,156 @@ crypto_tls_result crypto_tls_session_get_info_v1_1(
     *out_info = temp;
     status = CRYPTO_TLS_OK;
 finished:
+    unlock_session(s);
+    return status;
+}
+
+/* Independent additive TLS v1.2 peer and exporter ABI. */
+uint32_t crypto_tls_peer_abi_version(void)
+{
+    return CRYPTO_TLS_PEER_ABI_VERSION;
+}
+
+crypto_tls_result crypto_tls_peer_features_v1_2(uint64_t *out_features)
+{
+    if (!out_features) return CRYPTO_TLS_INVALID_ARGUMENT;
+    *out_features =
+        CRYPTO_TLS_PEER_FEATURE_DER_CHAIN_COPY |
+        CRYPTO_TLS_PEER_FEATURE_CERT_SHA256 |
+        CRYPTO_TLS_PEER_FEATURE_TLS_EXPORTER;
+    return CRYPTO_TLS_OK;
+}
+
+crypto_tls_result crypto_tls_session_copy_peer_chain_v1_2(
+    crypto_tls_session *s, uint8_t *out, size_t capacity, size_t *out_size)
+{
+    crypto_tls_result status;
+    const uint8_t *chain = NULL;
+    size_t length = 0u;
+    int ret;
+
+    if (!out_size || (!out && capacity))
+        return CRYPTO_TLS_INVALID_ARGUMENT;
+    status = lock_session(s);
+    if (status != CRYPTO_TLS_OK) return status;
+    if (atomic_load_explicit(&s->cancelled, memory_order_acquire)) {
+        status = CRYPTO_TLS_CANCELLED;
+        goto finished;
+    }
+    status = completed_handshake(&s->connection);
+    if (status != CRYPTO_TLS_OK) goto finished;
+    ret = tls_get_peer_certificate_chain(&s->connection, &chain, &length);
+    if (ret == 0) {
+        status = CRYPTO_TLS_PEER_CERT_ABSENT;
+        goto finished;
+    }
+    if (ret != 1 || !chain || !length
+        || length > CRYPTO_TLS_PEER_CHAIN_MAX_BYTES) {
+        status = CRYPTO_TLS_BACKEND_ERROR;
+        goto finished;
+    }
+    if (!out && capacity == 0u) {
+        *out_size = length;
+        status = CRYPTO_TLS_OK;
+        goto finished;
+    }
+    if (capacity < length) {
+        /* Only the required size changes on a buffer-too-small error. */
+        *out_size = length;
+        status = CRYPTO_TLS_PEER_BUFFER_TOO_SMALL;
+        goto finished;
+    }
+    memcpy(out, chain, length);
+    *out_size = length;
+    status = CRYPTO_TLS_OK;
+finished:
+    unlock_session(s);
+    return status;
+}
+
+crypto_tls_result crypto_tls_session_peer_sha256_v1_2(
+    crypto_tls_session *s, uint8_t out[CRYPTO_TLS_PEER_SHA256_BYTES])
+{
+    crypto_tls_result status;
+    uint8_t digest[CRYPTO_TLS_PEER_SHA256_BYTES] = {0};
+    size_t i;
+    int ret;
+    if (!out) return CRYPTO_TLS_INVALID_ARGUMENT;
+    status = lock_session(s);
+    if (status != CRYPTO_TLS_OK) return status;
+    if (atomic_load_explicit(&s->cancelled, memory_order_acquire)) {
+        status = CRYPTO_TLS_CANCELLED;
+        goto finished;
+    }
+    status = completed_handshake(&s->connection);
+    if (status != CRYPTO_TLS_OK) goto finished;
+    ret = tls_get_peer_certificate_sha256(&s->connection, digest);
+    if (ret == 0) {
+        status = CRYPTO_TLS_PEER_CERT_ABSENT;
+        goto finished;
+    }
+    if (ret != 1) {
+        status = CRYPTO_TLS_BACKEND_ERROR;
+        goto finished;
+    }
+    memcpy(out, digest, sizeof(digest));
+    status = CRYPTO_TLS_OK;
+finished:
+    {
+        volatile uint8_t *wipe = digest;
+        for (i = 0u; i < sizeof(digest); ++i) wipe[i] = 0u;
+    }
+    unlock_session(s);
+    return status;
+}
+
+crypto_tls_result crypto_tls_session_export_v1_2(
+    crypto_tls_session *s, const char *label,
+    const uint8_t *context, size_t context_len, uint32_t use_context,
+    uint8_t *out, size_t out_len)
+{
+    crypto_tls_result status;
+    uint8_t material[CRYPTO_TLS_EXPORTER_MAX_BYTES] = {0};
+    size_t label_len = 0u, i;
+
+    if (!out || !label || !out_len
+        || out_len > CRYPTO_TLS_EXPORTER_MAX_BYTES
+        || context_len > CRYPTO_TLS_EXPORTER_MAX_CONTEXT_BYTES
+        || (context_len && !context) || use_context > 1u)
+        return CRYPTO_TLS_INVALID_ARGUMENT;
+    /* Bounded readable label, no embedded controls or non-ASCII values. */
+    while (label_len <= CRYPTO_TLS_EXPORTER_MAX_LABEL_BYTES &&
+           label[label_len]) {
+        unsigned char byte = (unsigned char)label[label_len];
+        if (byte < 0x21u || byte > 0x7eu)
+            return CRYPTO_TLS_INVALID_ARGUMENT;
+        ++label_len;
+    }
+    if (!label_len || label_len > CRYPTO_TLS_EXPORTER_MAX_LABEL_BYTES)
+        return CRYPTO_TLS_INVALID_ARGUMENT;
+
+    status = lock_session(s);
+    if (status != CRYPTO_TLS_OK) return status;
+    if (atomic_load_explicit(&s->cancelled, memory_order_acquire)) {
+        status = CRYPTO_TLS_CANCELLED;
+        goto finished;
+    }
+    status = completed_handshake(&s->connection);
+    if (status != CRYPTO_TLS_OK) goto finished;
+
+    if (tls_export_keying_material(
+            &s->connection, material, out_len, label,
+            context, context_len, (int)use_context) != 1) {
+        status = CRYPTO_TLS_BACKEND_ERROR;
+        goto finished;
+    }
+    memcpy(out, material, out_len);
+    status = CRYPTO_TLS_OK;
+finished:
+    {
+        volatile uint8_t *wipe = material;
+        for (i = 0u; i < sizeof(material); ++i) wipe[i] = 0u;
+    }
     unlock_session(s);
     return status;
 }
