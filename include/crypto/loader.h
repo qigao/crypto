@@ -7,6 +7,7 @@
 #ifndef CRYPTO_TLS_LOADER_H
 #define CRYPTO_TLS_LOADER_H
 #include <crypto/tls.h>
+#include <crypto/tls_ext.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,11 +43,20 @@ typedef struct crypto_tls_module_api {
     crypto_tls_result (*session_shutdown)(crypto_tls_session *session);
     crypto_tls_result (*session_cancel)(crypto_tls_session *session);
     crypto_tls_result (*session_destroy)(crypto_tls_session **session);
+    /* V1.1 extension: published atomically with the base eleven functions.
+     * This pre-release host helper never admits a partial feature table.
+     */
+    uint32_t (*extension_version)(void);
+    crypto_tls_result (*features_v1_1)(uint64_t *out_features);
+    crypto_tls_result (*session_set_alpn_v1_1)(
+        crypto_tls_session *session, const char *const *names, size_t count);
+    crypto_tls_result (*session_get_info_v1_1)(
+        crypto_tls_session *session, crypto_tls_session_info_v1_1 *out_info);
 } crypto_tls_module_api;
 
 /* Explicit absolute native DSO/DLL path; no fallback library discovery.
  * Successful open validates the exported Crypto TLS ABI version and all
- * eleven required symbols before publishing the module handle.
+ * fifteen required symbols (11 base + 4 v1.1) before publishing the module handle.
  */
 crypto_tls_result crypto_tls_module_open(
     const char *native_path, crypto_tls_module **out_module);
