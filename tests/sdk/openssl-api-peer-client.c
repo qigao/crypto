@@ -107,7 +107,6 @@ int main(int argc, char **argv)
     handshake_observation obs = {0u, 0u};
     static const char LABEL[] = "EXPORTER-Channel-Binding";
     static const char REQUEST[] = "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n";
-    unsigned char alpn[] = {2u,'h','2',8u,'h','t','t','p','/','1','.','1'};
     char response[HTTP_LIMIT + 1u];
     size_t offset = 0u;
     int count;
@@ -140,9 +139,13 @@ int main(int argc, char **argv)
         SSL_CTX_set1_groups_list(ctx, "P-256") != 1)
         goto done;
     ssl = SSL_new(ctx);
+    /* This specifically qualifies HelloRetryRequest. The Crypto server
+     * under test has no ALPN policy installed; do not advertise ALPN here.
+     * Positive h2 and negative ALPN policy are separately qualified by
+     * the existing Crypto client / independent OpenSSL server matrix.
+     */
     if (!ssl || SSL_set_tlsext_host_name(ssl, argv[4]) != 1
-        || SSL_set1_host(ssl, argv[4]) != 1
-        || SSL_set_alpn_protos(ssl, alpn, sizeof(alpn)) != 0)
+        || SSL_set1_host(ssl, argv[4]) != 1)
         goto done;
     SSL_set_msg_callback(ssl, observe_handshake);
     SSL_set_msg_callback_arg(ssl, &obs);
