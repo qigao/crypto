@@ -8,6 +8,7 @@
 #define CRYPTO_TLS_LOADER_H
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
+#include <crypto/tls_peer.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,11 +53,22 @@ typedef struct crypto_tls_module_api {
         crypto_tls_session *session, const char *const *names, size_t count);
     crypto_tls_result (*session_get_info_v1_1)(
         crypto_tls_session *session, crypto_tls_session_info_v1_1 *out_info);
+    uint32_t (*peer_version_v1_2)(void);
+    crypto_tls_result (*peer_features_v1_2)(uint64_t *out_features);
+    crypto_tls_result (*peer_copy_chain_v1_2)(
+        crypto_tls_session *session, uint8_t *out, size_t capacity,
+        size_t *out_size);
+    crypto_tls_result (*peer_sha256_v1_2)(
+        crypto_tls_session *session, uint8_t out[CRYPTO_TLS_PEER_SHA256_BYTES]);
+    crypto_tls_result (*session_export_v1_2)(
+        crypto_tls_session *session, const char *label,
+        const uint8_t *context, size_t context_len, uint32_t use_context,
+        uint8_t *out, size_t out_len);
 } crypto_tls_module_api;
 
 /* Explicit absolute native DSO/DLL path; no fallback library discovery.
  * Successful open validates the exported Crypto TLS ABI version and all
- * fifteen required symbols (11 base + 4 v1.1) before publishing the module handle.
+ * twenty required symbols (11 base + 4 v1.1 + 5 v1.2) before publishing the module handle.
  */
 crypto_tls_result crypto_tls_module_open(
     const char *native_path, crypto_tls_module **out_module);
