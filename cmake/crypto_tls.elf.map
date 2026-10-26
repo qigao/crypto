@@ -26,5 +26,14 @@ CRYPTO_TLS_EXT_1_1 {
     crypto_tls_get_features_v1_1;
     crypto_tls_session_set_alpn_v1_1;
     crypto_tls_session_get_info_v1_1;
-  local: *;
 } CRYPTO_TLS_1;
+
+CRYPTO_TLS_PEER_1_2 {
+  global:
+    crypto_tls_peer_abi_version;
+    crypto_tls_peer_features_v1_2;
+    crypto_tls_session_copy_peer_chain_v1_2;
+    crypto_tls_session_peer_sha256_v1_2;
+    crypto_tls_session_export_v1_2;
+  local: *;
+} CRYPTO_TLS_EXT_1_1;
