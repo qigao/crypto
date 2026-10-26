@@ -7,7 +7,7 @@ on:
       - "CMakeLists.txt"
       - "src/**"
       - "include/crypto/**"
-      - "tests/sdk/openssl-client.c"
+      - "tests/sdk/**"
       - "tests/sdk/CMakeLists.txt"
       - "tools/qualify_crypto_shared_openssl.sh"
       - "tools/qualify_crypto_exporter_openssl.sh"
