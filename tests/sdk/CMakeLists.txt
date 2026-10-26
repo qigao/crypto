@@ -197,3 +197,22 @@ if(CRYPTO_SDK_ENABLE_CIPHER_BIO)
       VERBATIM)
   endif()
 endif()
+
+# Source TSan: independently cancelled borrowed IO callback, no fixture mocks.
+option(CRYPTO_SDK_ENABLE_CIPHER_BIO_RACE
+  "Run true C11 CipherBIO borrowed-callback cancellation race under TSan" OFF)
+if(CRYPTO_SDK_ENABLE_CIPHER_BIO_RACE)
+  if(NOT CRYPTO_SDK_ENABLE_CIPHER_BIO OR NOT UNIX)
+    message(FATAL_ERROR "CipherBIO race requires installed host BIO and native pthreads")
+  endif()
+  find_package(Threads REQUIRED)
+  add_executable(crypto_sdk_cipher_bio_cancel_race cipher-bio-cancel-race.c)
+  set_target_properties(crypto_sdk_cipher_bio_cancel_race PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+  target_link_libraries(crypto_sdk_cipher_bio_cancel_race
+    PRIVATE Crypto::TLSCipherBIO Threads::Threads)
+  add_test(NAME crypto.installed.cipher_bio_cancel_race
+    COMMAND crypto_sdk_cipher_bio_cancel_race)
+  set_tests_properties(crypto.installed.cipher_bio_cancel_race
+    PROPERTIES TIMEOUT 90)
+endif()
