@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - "providers/gmssl/candidates/port14/**"
+      - "providers/gmssl/hardening/**"
+      - "tools/assemble_gmssl.cmake"
       - "tests/gmssl-port14/**"
       - "tools/audit_gmssl_port14_candidate.py"
       - ".github/workflows/gmssl-port14-candidate.yml"
@@ -171,4 +173,86 @@ jobs:
             build-sdk/Testing/Temporary/LastTest.log
             build-owner/Testing/Temporary/LastTest.log
             ${{ runner.temp }}/gmssl-candidate-source.json
+          if-no-files-found: warn
+
+  candidate-source-sanitizers:
+    name: "Opt-in GmSSL CCS/HRR source ${{ matrix.mode }}"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [asan-ubsan-lsan, tsan]
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      LSAN_OPTIONS: exitcode=23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: guanzhi/GmSSL
+          ref: 7c9f02904ef33e59c87b4f16621cc8fd434e7579
+          path: _gmssl-upstream
+          persist-credentials: false
+      - name: Assemble source and verify provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_gmssl_import.py
+          python3 tools/audit_gmssl_port14_candidate.py
+          cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            -DGMSSL_PORT14_CRYPTO_CANDIDATE=ON \
+            "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/candidate-source-sanitized.json" \
+            -P tools/assemble_gmssl.cmake
+      - name: Fully instrument provider, archive, and installed C11 consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.mode }}" == tsan ]]; then
+            flags="-O1 -g -fno-omit-frame-pointer -fsanitize=thread"
+          else
+            flags="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
+          fi
+          cmake -S _gmssl-upstream -B build-gmssl -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS=$flags" \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_TLS=ON -DENABLE_SECP256R1=ON -DENABLE_SECP384R1=ON \
+            -DENABLE_SHA2=ON -DENABLE_AES=ON -DENABLE_AES_CCM=OFF \
+            -DENABLE_SHA1=ON -DENABLE_CHACHA20=OFF -DENABLE_GHASH=OFF \
+            -DENABLE_SM9=OFF -DENABLE_CMS=OFF -DENABLE_LMS=OFF \
+            -DENABLE_XMSS=OFF -DENABLE_SPHINCS=OFF -DENABLE_KYBER=OFF \
+            -DENABLE_ZUC=OFF -DENABLE_SKF=OFF -DENABLE_SDF=OFF
+          cmake --build build-gmssl --target gmssl --parallel 2
+          cmake -S . -B build-crypto -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON \
+            "-DCMAKE_C_FLAGS=$flags" "-DCMAKE_CXX_FLAGS=$flags" \
+            "-DCMAKE_EXE_LINKER_FLAGS=$flags" \
+            "-DCRYPTO_GMSSL_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
+            "-DCRYPTO_GMSSL_STATIC=$GITHUB_WORKSPACE/build-gmssl/bin/libgmssl.a"
+          cmake --build build-crypto --parallel 2
+          ctest --test-dir build-crypto --no-tests=error --output-on-failure \
+            --timeout 120 --repeat until-fail:3
+          cmake --install build-crypto --prefix "$RUNNER_TEMP/crypto-sanitized"
+          python3 tools/audit_static_crypto.py \
+            --prefix "$RUNNER_TEMP/crypto-sanitized" --report build-crypto/candidate-source-static.json
+          cmake -S tests/sdk -B build-sdk -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS=$flags" \
+            "-DCMAKE_EXE_LINKER_FLAGS=$flags" \
+            "-DCMAKE_PREFIX_PATH=$RUNNER_TEMP/crypto-sanitized" \
+            -DCRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO_RACE=ON \
+            "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/providers/gmssl/tests/fixtures"
+          cmake --build build-sdk --parallel 2
+          ctest --test-dir build-sdk --no-tests=error --output-on-failure \
+            --timeout 120 --repeat until-fail:3
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-port14-source-${{ matrix.mode }}
+          path: |
+            build-crypto/candidate-source-static.json
+            build-crypto/Testing/Temporary/LastTest.log
+            build-sdk/Testing/Temporary/LastTest.log
           if-no-files-found: warn
