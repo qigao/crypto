@@ -41,7 +41,7 @@ for proto in 12 13; do
     echo "Crypto TLS $proto test server did not enter accept" >&2; exit 1;
   }
 
-  python3 - "$proto" "$port" "$work/ca.pem" "$openssl_log" <<'PY'
+  if ! python3 - "$proto" "$port" "$work/ca.pem" "$openssl_log" <<'PY'
 from pathlib import Path
 import os
 import re
@@ -90,6 +90,15 @@ with Path(logfile).open("wb") as output:
         ), file=sys.stderr)
         sys.exit(1)
 PY
+  then
+    # The server might still be unwinding the failed handshake. Show only
+    # bounded state/length diagnostics, never the output containing secrets.
+    sleep 0.2
+    grep '^CRYPTO_TLS_PRIVATE_HANDSHAKE_DIAG ' "$server_log" >&2 || true
+    grep '^Crypto test-only TLS server/exporter failed ' "$server_log" >&2 || true
+    echo "Reverse OpenSSL TLS $proto peer did not qualify" >&2
+    exit 1
+  fi
 
   if ! wait "$server_pid"; then
     server_pid=""
