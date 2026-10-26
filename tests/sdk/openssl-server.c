@@ -133,10 +133,11 @@ int main(int argc, char **argv)
     uint8_t request[128];
     static const uint8_t reply[] =
         "HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
-    int port, proto, step, done_handshake = 0, got_request = 0;
+    int port, proto, step, done_handshake = 0, got_request = 0, phase = 0;
     int64_t deadline;
     size_t bytes = 0u, i;
     int rc = 1;
+    status = CRYPTO_TLS_INVALID_ARGUMENT;
     if (argc != 6) return 2;
     if (strcmp(argv[1], "12") == 0) proto = CRYPTO_TLS_1_2;
     else if (strcmp(argv[1], "13") == 0) proto = CRYPTO_TLS_1_3;
@@ -146,6 +147,7 @@ int main(int argc, char **argv)
         || !argv[5][0]) return 2;
 
     (void)signal(SIGPIPE, SIG_IGN);
+    phase = 1;
     transport.fd = accept_local(port);
     if (transport.fd < 0) {
         fprintf(stderr, "Crypto exporter peer: bounded accept failed\n");
@@ -166,6 +168,7 @@ int main(int argc, char **argv)
     io.read = on_read;
     io.write = on_write;
 
+    phase = 2;
     if (crypto_tls_provider_create(CRYPTO_TLS_ABI_VERSION, &provider)
             != CRYPTO_TLS_OK
         || crypto_tls_session_create(provider, &options, &io, &session)
@@ -174,6 +177,7 @@ int main(int argc, char **argv)
         goto done;
     deadline = millis() + MAX_MS;
     for (step = 0; step < MAX_STEPS && millis() < deadline; ++step) {
+        phase = 3;
         status = crypto_tls_session_handshake(session);
         if (status == CRYPTO_TLS_OK) {
             done_handshake = 1;
@@ -187,16 +191,19 @@ int main(int argc, char **argv)
     /* OpenSSL s_client -keymatexport uses no exporter context. The CNet
      * context-present flag is tested separately using both native peers.
      */
+    phase = 4;
     if (crypto_tls_session_export_v1_2(
             session, "EXPORTER-Channel-Binding", NULL, 0u, 0u,
             secret, sizeof(secret)) != CRYPTO_TLS_OK)
         goto done;
+    phase = 5;
     if (secret_hex_to_private_file(argv[5], secret, sizeof(secret)) != 0)
         goto done;
 
     deadline = millis() + MAX_MS;
     for (step = 0; step < MAX_STEPS && millis() < deadline; ++step) {
         bytes = 0u;
+        phase = 6;
         status = crypto_tls_session_receive(
             session, request, sizeof(request), &bytes);
         if (status == CRYPTO_TLS_OK && bytes) {
@@ -210,6 +217,7 @@ int main(int argc, char **argv)
     deadline = millis() + MAX_MS;
     for (step = 0; step < MAX_STEPS && millis() < deadline; ++step) {
         bytes = 0u;
+        phase = 7;
         status = crypto_tls_session_send(
             session, reply, sizeof(reply)-1u, &bytes);
         if (status == CRYPTO_TLS_OK && bytes == sizeof(reply)-1u) {
@@ -237,7 +245,7 @@ done:
         rc = 1;
     close(transport.fd);
     if (rc)
-        fprintf(stderr, "Crypto test-only TLS server/exporter failed (%d)\n",
-                proto);
+        fprintf(stderr, "Crypto test-only TLS server/exporter failed (protocol=%d,phase=%d,status=%d,handshake=%d,request=%d)\n",
+                proto, phase, (int)status, done_handshake, got_request);
     return rc;
 }
