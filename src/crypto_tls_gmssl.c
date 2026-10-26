@@ -316,7 +316,7 @@ crypto_tls_result crypto_tls_session_handshake(crypto_tls_session *s)
                 int after = s->connection.handshake_state;
                 if (after != observed_state_before || result != TLS_ERROR_RECV_AGAIN) {
                     fprintf(stderr,
-                        "CRYPTO_TLS_PRIVATE_STATE protocol=%d before=%d after=%d result=%d\\n",
+                        "CRYPTO_TLS_PRIVATE_STATE protocol=%d before=%d after=%d result=%d\n",
                         s->connection.protocol, observed_state_before, after, result);
                 }
             }
