@@ -99,9 +99,15 @@ crypto_tls_result crypto_tls_module_open(
     LOAD(session_shutdown, "crypto_tls_session_shutdown");
     LOAD(session_cancel, "crypto_tls_session_cancel");
     LOAD(session_destroy, "crypto_tls_session_destroy");
+    LOAD(extension_version, "crypto_tls_extension_abi_version");
+    LOAD(features_v1_1, "crypto_tls_get_features_v1_1");
+    LOAD(session_set_alpn_v1_1, "crypto_tls_session_set_alpn_v1_1");
+    LOAD(session_get_info_v1_1, "crypto_tls_session_get_info_v1_1");
 #undef LOAD
 
-    if (module->api.version() != CRYPTO_TLS_ABI_VERSION) goto failed;
+    if (module->api.version() != CRYPTO_TLS_ABI_VERSION
+        || module->api.extension_version() != CRYPTO_TLS_EXTENSION_ABI_VERSION)
+        goto failed;
     *out_module = module;
     return CRYPTO_TLS_OK;
 
