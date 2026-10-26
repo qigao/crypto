@@ -25,8 +25,10 @@ The public <crypto/provider.h> ABI v0.1 and <crypto/tls.h> ABI v1 both
 retain their distinct version marker semantics. One physical native owner
 is not the same thing as treating the two API structures as identical.
 
-The native export surface is **exactly 14 public functions** (three
-`crypto_provider_*` and eleven `crypto_tls_*`). ELF uses separate SM3
+The original v1 native export surface was 14 functions. The additive
+v1.1 ALPN/inspection candidate now exports **exactly 18 public functions**:
+three `crypto_provider_*`, eleven base `crypto_tls_*` and four v1.1
+extension functions, all from the same physical shared binary. ELF uses separate SM3
 and TLS linker version groups on the *same ELF image*, macOS one explicit
 export list, Windows one explicit DLL export policy; private GmSSL
 symbols are never exported.
