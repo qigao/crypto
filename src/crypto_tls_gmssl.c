@@ -12,6 +12,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE
+#include <stdio.h>
+#endif
+
 struct crypto_tls_provider {
     atomic_uint sessions;
 };
@@ -87,6 +91,38 @@ static crypto_tls_result map_backend_result(int result)
     if (result == TLS_ERROR_TCP_CLOSED) return CRYPTO_TLS_CLOSED;
     return CRYPTO_TLS_BACKEND_ERROR;
 }
+
+#ifdef CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE
+/* Private test build only: publish ONLY state/type/length metadata.
+ * Never log peer bytes, nonces, certificates, transcript, keys, or alerts.
+ * This is not a public API or a production logging facility.
+ */
+static void trace_server_handshake_failure(const TLS_CONNECT *c, int ret)
+{
+    size_t available = c->recordlen;
+    unsigned type = 0u, version = 0u, handshake_type = 0u;
+    size_t declared_record = 0u, handshake_length = 0u;
+    if (c->is_client) return;
+    if (available >= 5u && available <= sizeof(c->record)) {
+        type = c->record[0];
+        version = ((unsigned)c->record[1] << 8) | c->record[2];
+        declared_record = ((size_t)c->record[3] << 8) | c->record[4];
+        if (type == TLS_record_handshake && available >= 9u) {
+            handshake_type = c->record[5];
+            handshake_length = ((size_t)c->record[6] << 16) |
+                ((size_t)c->record[7] << 8) | c->record[8];
+        }
+    }
+    fprintf(stderr,
+        "CRYPTO_TLS_PRIVATE_HANDSHAKE_DIAG ret=%d state=%d"
+        " recordlen=%zu record_offset=%zu type=%u version=%u"
+        " wire_payload=%zu handshake_type=%u handshake_body=%zu"
+        " available_body=%zu\\n",
+        ret, c->handshake_state, available, c->record_offset, type,
+        version, declared_record, handshake_type, handshake_length,
+        available >= 9u ? available - 9u : 0u);
+}
+#endif
 
 static crypto_tls_result completed_handshake(TLS_CONNECT *connection)
 {
@@ -247,6 +283,12 @@ crypto_tls_result crypto_tls_session_handshake(crypto_tls_session *s)
              */
             s->handshake_started = 1;
             result = tls_do_handshake(&s->connection);
+#ifdef CRYPTO_TLS_PRIVATE_TEST_HANDSHAKE_TRACE
+            if (result != 1 &&
+                result != TLS_ERROR_SEND_AGAIN &&
+                result != TLS_ERROR_RECV_AGAIN)
+                trace_server_handshake_failure(&s->connection, result);
+#endif
             status = map_backend_result(result);
             if (status == CRYPTO_TLS_OK)
                 status = completed_handshake(&s->connection);
