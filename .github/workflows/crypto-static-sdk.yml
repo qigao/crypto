@@ -39,10 +39,10 @@ jobs:
             target: windows-x64
     steps:
       - uses: actions/checkout@v4
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@2e214ae44a3e3244eded5db6361194576356fc9e
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@65c12e71d02b9b7dacfafc3d188a3bda18184296
         with:
           mode: read
-      - name: Verify and install canonical GmSSL 3.2.0#13 vcpkg port
+      - name: Verify and install canonical GmSSL 3.2.0#14 vcpkg port
         shell: bash
         run: python3 tools/ci/install_vcpkg_gmssl.py ${{ matrix.target }}
       - name: Build, test and install single Salts::Crypto archive
@@ -144,7 +144,7 @@ jobs:
       LSAN_OPTIONS: exitcode=23
     steps:
       - uses: actions/checkout@v4
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@2e214ae44a3e3244eded5db6361194576356fc9e
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@65c12e71d02b9b7dacfafc3d188a3bda18184296
         with:
           mode: read
       - name: Verify and install GmSSL exclusively from vcpkg-cache
@@ -207,7 +207,7 @@ jobs:
             os: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@2e214ae44a3e3244eded5db6361194576356fc9e
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@65c12e71d02b9b7dacfafc3d188a3bda18184296
         with:
           mode: read
       - name: Verify and install exact GmSSL vcpkg target SDK

@@ -8,7 +8,7 @@ project(SaltsCrypto VERSION 0.1.0 LANGUAGES C)
 if(NOT DEFINED CRYPTO_GMSSL_ROOT OR
    NOT EXISTS "${CRYPTO_GMSSL_ROOT}/share/gmssl/GmSSLConfig.cmake")
   message(FATAL_ERROR
-    "CRYPTO_GMSSL_ROOT must point to a qigao/vcpkg-cache installed gmssl 3.2.0#13 prefix")
+    "CRYPTO_GMSSL_ROOT must point to a qigao/vcpkg-cache installed gmssl 3.2.0#14 prefix")
 endif()
 file(TO_CMAKE_PATH "${CRYPTO_GMSSL_ROOT}" _gmssl_prefix)
 if(NOT EXISTS "${_gmssl_prefix}/include/gmssl/tls.h" OR

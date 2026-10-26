@@ -15,12 +15,12 @@ import subprocess
 import sys
 
 EXPECTED_BLOBS = {
-    "portfile.cmake": "12d20b580f3e863c7d3668ae4457107cfab28e33",
-    "vcpkg.json": "4c88213d6a8f021e0d5a831d7153e580f8d73b88",
-    "GmSSLConfig.cmake": "32c0b223d39144cf6148388c265a51fc757284f4",
+    "portfile.cmake": "196cb2109da104002463cca3849f4e03fd469fb6",
+    "vcpkg.json": "b94a504d1a9b2e0b04c052a512a55e29525d11f0",
+    "GmSSLConfig.cmake": "6539349471a849b4d613cbb9b1f05cd6ece313d1",
 }
 EXPECTED_VERSION = "3.2.0"
-EXPECTED_PORT_VERSION = 13
+EXPECTED_PORT_VERSION = 14
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -50,7 +50,7 @@ def check_port() -> Path:
     if (manifest.get("name"), manifest.get("version"),
             manifest.get("port-version")) != (
                 "gmssl", EXPECTED_VERSION, EXPECTED_PORT_VERSION):
-        raise RuntimeError("Incorrect qigao/vcpkg-cache gmssl 3.2.0#13")
+        raise RuntimeError("Incorrect qigao/vcpkg-cache gmssl 3.2.0#14")
     return port
 
 
@@ -97,7 +97,7 @@ def main() -> None:
     ):
         if not path.is_file():
             raise RuntimeError("Incomplete installed GmSSL vcpkg SDK: " + str(path))
-    print("VERIFIED qigao/vcpkg-cache gmssl 3.2.0#13", port, triplet, prefix)
+    print("VERIFIED qigao/vcpkg-cache gmssl 3.2.0#14", port, triplet, prefix)
     with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as f:
         f.write("CRYPTO_GMSSL_ROOT=" + str(prefix) + "\n")
         f.write("CRYPTO_GMSSL_TRIPLET=" + triplet + "\n")

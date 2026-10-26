@@ -22,12 +22,12 @@ libecc BSD license with the combined archive.
 
 ## Install and build
 
-Install the canonical pinned `gmssl 3.2.0#13` port from
+Install the reviewed candidate `gmssl 3.2.0#14` port from
 [qigao/vcpkg-cache](https://github.com/qigao/vcpkg-cache).
 The Crypto repo owns its `vcpkg.json` manifest; the shared vcpkg setup
 action supplies pinned tooling and `VCPKG_OVERLAY_PORTS`. CI uses the
-immutable vcpkg-cache commit
-`2e214ae44a3e3244eded5db6361194576356fc9e`.
+exact Draft port14 commit
+`65c12e71d02b9b7dacfafc3d188a3bda18184296` (see vcpkg-cache PR #214)..
 
 For a GitHub Actions runner after executing that setup action:
 
@@ -40,7 +40,7 @@ ctest --test-dir build --output-on-failure
 cmake --install build --prefix /tmp/crypto-sdk
 ```
 
-The installer rejects any nonmatching portfile, manifest or package-config
+The installer rejects any nonmatching #14 portfile, manifest or package-config
 Git blob; it never falls back to the public registry or an unverified local
 `gmssl.a`. Other qualified target triplets are selected by the script for
 Windows, macOS, Android ARM64 and iOS ARM64.
@@ -68,3 +68,5 @@ the vcpkg-cache port in a separately qualified change; do not restore
 `providers/gmssl`, relax TLS tests, substitute OpenSSL, or silently drop
 features. This repository migration alone does not release packages, switch
 production CNet, or alter its current GmSSL 3.2.0#13 pin.
+
+The GmSSL #14 port is a **Draft dependency** in [vcpkg-cache #214](https://github.com/qigao/vcpkg-cache/pull/214); Crypto #33 must remain unmerged until that port revision passes its own conformance gates, enters the approved vcpkg registry, and a final exact-port Crypto CI succeeds. Existing production users of #13 remain unchanged.
