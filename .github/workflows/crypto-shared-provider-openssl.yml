@@ -50,6 +50,7 @@ jobs:
             7c9f02904ef33e59c87b4f16621cc8fd434e7579
           cmake "-DGMSSL_UPSTREAM_SOURCE=$GITHUB_WORKSPACE/_gmssl-upstream" \
             -DGMSSL_TLS12_CKE_DIAGNOSTICS=ON \
+            -DGMSSL_TLS13_HRR_DIAGNOSTICS=ON \
             "-DGMSSL_ASSEMBLY_RECEIPT=$RUNNER_TEMP/crypto-facade-assembly.json" \
             -P tools/assemble_gmssl.cmake
           test -s "$RUNNER_TEMP/crypto-facade-assembly.json"
