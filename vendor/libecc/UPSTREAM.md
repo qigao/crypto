@@ -8,6 +8,7 @@
 
 The selected upstream include and source files in this directory are
 unmodified files from a snapshot produced with `git archive`; this
-`UPSTREAM.md` records local provenance. `../../CMakeLists.txt` provides the
-integration and limits the build to the WEI448 curve, SHAKE256 hash, and
-EDDSA448 signature implementation.
+`UPSTREAM.md` records local provenance. `CMakeLists.txt` owns the private Ed448-only OBJECT target; the repository
+root folds its objects into the single installed `Salts::Crypto` static archive.
+The explicit source list and compile definitions retain only the reviewed
+WEI448 curve, SHAKE256 hash, and EDDSA448 signature configuration.

@@ -21,17 +21,9 @@ include(CTest)
 find_package(Threads REQUIRED)
 
 set(_libecc "${CMAKE_CURRENT_SOURCE_DIR}/vendor/libecc")
-file(GLOB _arith CONFIGURE_DEPENDS
-  "${_libecc}/src/fp/fp*.c" "${_libecc}/src/nn/n*.c")
-file(GLOB _curves CONFIGURE_DEPENDS "${_libecc}/src/curves/*.c")
-set(_ed448_sources ${_arith} ${_curves}
-  "${_libecc}/src/hash/hash_algs.c"
-  "${_libecc}/src/hash/shake.c"
-  "${_libecc}/src/hash/shake256.c"
-  "${_libecc}/src/sig/ec_key.c"
-  "${_libecc}/src/sig/eddsa.c"
-  "${_libecc}/src/sig/sig_algs.c"
-  "${_libecc}/src/utils/utils.c")
+# Compile libecc's reviewed Ed448 subset in its own internal OBJECT target.
+# Fold these objects directly into the sole installed Salts::Crypto archive.
+add_subdirectory(vendor/libecc)
 
 # No separate libecc archive; only its required Ed448 code is compiled.
 # SHA256 is the existing, pinned GmSSL implementation, not a duplicate libecc SHA.
@@ -42,7 +34,7 @@ add_library(salts_crypto STATIC
   src/crypto_ed448.c
   src/crypto_sha256.c
   src/crypto_random.c
-  ${_ed448_sources})
+  $<TARGET_OBJECTS:crypto_libecc_ed448_objects>)
 add_library(Salts::Crypto ALIAS salts_crypto)
 set_target_properties(salts_crypto PROPERTIES
   OUTPUT_NAME salts_crypto EXPORT_NAME Crypto
@@ -59,9 +51,9 @@ target_compile_definitions(salts_crypto PRIVATE
   ENABLE_TLS ENABLE_SECP256R1 ENABLE_SECP384R1
   ENABLE_SHA1 ENABLE_SHA2 ENABLE_AES)
 
-# Preserve the proven RFC8032 Ed448-only private libecc configuration.
-# No SHA256/SM3 libecc implementation or alternate RNG export is enabled.
-set_source_files_properties(src/crypto_ed448.c ${_ed448_sources}
+# Keep the Ed448 facade's configuration consistent with the private object
+# target. No SHA256/SM3 libecc implementation or alternate RNG is built.
+set_source_files_properties(src/crypto_ed448.c
   PROPERTIES COMPILE_DEFINITIONS
   "WITH_STDLIB;WITH_LIBECC_CONFIG_OVERRIDE;WITH_CURVE_WEI448;WITH_HASH_SHAKE256;WITH_SIG_EDDSA448;WORDSIZE=64")
 
@@ -89,7 +81,7 @@ add_custom_command(TARGET salts_crypto POST_BUILD
 
 install(TARGETS salts_crypto EXPORT SaltsCryptoTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(DIRECTORY include/crypto include/salts
+install(DIRECTORY include/crypto
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   FILES_MATCHING PATTERN "*.h")
 install(FILES "${_libecc}/LICENSE"

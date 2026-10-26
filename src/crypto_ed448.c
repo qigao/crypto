@@ -1,4 +1,4 @@
-#include <salts/crypto.h>
+#include <crypto/ed448.h>
 
 #include <limits.h>
 #include <string.h>
