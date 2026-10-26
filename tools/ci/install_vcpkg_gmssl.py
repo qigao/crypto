@@ -21,11 +21,47 @@ EXPECTED_BLOBS = {
 }
 EXPECTED_VERSION = "3.2.0"
 EXPECTED_PORT_VERSION = 14
+# SHA of the complete canonical port subtree, including ALL C/H files,
+# historical patches, scripts, tests and license-bearing metadata.
+# The full tree is identical on reviewed vcpkg-cache PR #214 heads
+# 65c12e71 and 09ab7cd0; a partial file check would miss drift.
+EXPECTED_PORT_GIT_TREE = "730635344d5ffa64fcf55eb959aa92c79cedd15c"
 
 
 def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(
         f"blob {len(data)}\0".encode("ascii") + data
+    ).hexdigest()
+
+
+def git_tree_sha(directory: Path) -> str:
+    """Recreate a Git tree ID from actual installed overlay files.
+
+    This GmSSL port's 97 tracked files are all regular mode 100644.
+    Sort directory entries according to Git's tree order (name + '/' for
+    subdirectories), and reject symlinks and special files rather than
+    hiding source/package substitutions behind the selected manifest.
+    """
+    items = []
+    for entry in directory.iterdir():
+        if entry.is_symlink():
+            raise RuntimeError("Symlink forbidden in vetted GmSSL port: " + str(entry))
+        if entry.is_dir():
+            mode = b"40000"
+            oid = git_tree_sha(entry)
+        elif entry.is_file():
+            mode = b"100644"
+            oid = git_blob_sha(entry.read_bytes())
+        else:
+            raise RuntimeError("Unsupported GmSSL port entry: " + str(entry))
+        items.append((entry.name.encode("utf-8"), entry.is_dir(), mode, oid))
+    items.sort(key=lambda item: item[0] + (b"/" if item[1] else b""))
+    content = b"".join(
+        mode + b" " + name + b"\0" + bytes.fromhex(oid)
+        for name, _, mode, oid in items
+    )
+    return hashlib.sha1(
+        f"tree {len(content)}\0".encode("ascii") + content
     ).hexdigest()
 
 
@@ -42,6 +78,12 @@ def port_root() -> Path:
 
 def check_port() -> Path:
     port = port_root()
+    actual_tree = git_tree_sha(port)
+    if actual_tree != EXPECTED_PORT_GIT_TREE:
+        raise RuntimeError(
+            "GmSSL source/patch tree identity mismatch: " + actual_tree
+            + " != " + EXPECTED_PORT_GIT_TREE
+        )
     for filename, sha in EXPECTED_BLOBS.items():
         path = port / filename
         if not path.is_file() or git_blob_sha(path.read_bytes()) != sha:

@@ -27,7 +27,7 @@ Install the reviewed candidate `gmssl 3.2.0#14` port from
 The Crypto repo owns its `vcpkg.json` manifest; the shared vcpkg setup
 action supplies pinned tooling and `VCPKG_OVERLAY_PORTS`. CI uses the
 exact Draft port14 commit
-`65c12e71d02b9b7dacfafc3d188a3bda18184296` (see vcpkg-cache PR #214)..
+`09ab7cd051fc46097a896a3cdd3074ad5633f356` (see vcpkg-cache PR #214).
 
 For a GitHub Actions runner after executing that setup action:
 
@@ -40,7 +40,7 @@ ctest --test-dir build --output-on-failure
 cmake --install build --prefix /tmp/crypto-sdk
 ```
 
-The installer rejects any nonmatching #14 portfile, manifest or package-config
+The installer rejects any nonmatching full #14 port Git tree (all 97 files), manifest or package-config
 Git blob; it never falls back to the public registry or an unverified local
 `gmssl.a`. Other qualified target triplets are selected by the script for
 Windows, macOS, Android ARM64 and iOS ARM64.
