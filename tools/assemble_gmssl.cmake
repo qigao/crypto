@@ -126,6 +126,14 @@ endforeach()
 # Apply reviewed Crypto-only hardening strictly AFTER the 40 original source
 # transformations. Frozen source blobs and patch ordering remain unchanged.
 include("${_crypto_root}/providers/gmssl/hardening/ubsan-undefined-behavior.cmake")
+
+# Optional independent-interop diagnostics only; never run in a production
+# source handoff. Exact source anchors fail closed on upstream drift.
+set(_private_tls12_trace 0)
+if(GMSSL_TLS12_CKE_DIAGNOSTICS)
+  include("${_crypto_root}/providers/gmssl/diagnostics/tls12-cke.cmake")
+  set(_private_tls12_trace 1)
+endif()
 file(SHA256 "${SOURCE_PATH}/src/secp256r1.c" _p256_sha)
 file(SHA256 "${SOURCE_PATH}/src/secp384r1.c" _p384_sha)
 file(SHA256 "${SOURCE_PATH}/src/tls12.c" _tls12_sha)
@@ -145,6 +153,7 @@ if(DEFINED GMSSL_ASSEMBLY_RECEIPT)
     "  \"git_patch_count\": 1,\n"
     "  \"source_adaptations\": ${_n},\n"
     "  \"crypto_hardening_edits\": 5,\n"
+    "  \"private_tls12_diagnostic\": ${_private_tls12_trace},\n"
     "  \"secp256r1_sha256\": \"${_p256_sha}\",\n"
     "  \"secp384r1_sha256\": \"${_p384_sha}\",\n"
     "  \"tls12_sha256\": \"${_tls12_sha}\",\n"
