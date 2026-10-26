@@ -187,6 +187,7 @@ int main(int argc, char **argv)
         pause_one_ms();
     }
     if (!done_handshake) goto done;
+    fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE handshake_complete protocol=%d\n", proto);
 
     /* OpenSSL s_client -keymatexport uses no exporter context. The CNet
      * context-present flag is tested separately using both native peers.
@@ -200,6 +201,7 @@ int main(int argc, char **argv)
     if (secret_hex_to_private_file(argv[5], secret, sizeof(secret)) != 0)
         goto done;
 
+    fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE exporter_ready protocol=%d\n", proto);
     deadline = millis() + MAX_MS;
     for (step = 0; step < MAX_STEPS && millis() < deadline; ++step) {
         bytes = 0u;
@@ -214,6 +216,7 @@ int main(int argc, char **argv)
         pause_one_ms();
     }
     if (!got_request) goto done;
+    fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE request_received protocol=%d\n", proto);
     deadline = millis() + MAX_MS;
     for (step = 0; step < MAX_STEPS && millis() < deadline; ++step) {
         bytes = 0u;
@@ -228,6 +231,7 @@ int main(int argc, char **argv)
         pause_one_ms();
     }
     if (rc == 0) {
+        fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE response_sent protocol=%d\n", proto);
         /* Give the external peer a bounded opportunity to read before
          * closing transport. This test is about the exporter, not TLS close. */
         struct timespec settled = {0, 200000000};
