@@ -128,6 +128,10 @@ endforeach()
 include("${_crypto_root}/providers/gmssl/hardening/ubsan-undefined-behavior.cmake")
 # Post-import distinct reviewed protocol fix, not one of the historical 40.
 include("${_crypto_root}/providers/gmssl/hardening/tls13-hrr-compat-ccs.cmake")
+# Candidate-only, never silently admitted into production build.
+if(GMSSL_PORT14_CRYPTO_CANDIDATE)
+  include("${_crypto_root}/providers/gmssl/hardening/port14-ccs-hrr-candidate.cmake")
+endif()
 
 # Optional independent-interop diagnostics only; never run in a production
 # source handoff. Exact source anchors fail closed on upstream drift.
