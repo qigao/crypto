@@ -107,14 +107,23 @@ with Path(secret_path).open("wb") as output:
         }
         server_log = Path(ca).parent / ("native-exporter-" + protocol + ".private")
         server_status = "none"
+        source_locations = []
         if server_log.is_file():
+            import re
             for line in server_log.read_text(errors="replace").splitlines():
                 if line.startswith("Crypto test-only TLS server/exporter failed"):
                     server_status = line
+                # Only a filename+line number, not the underlying GmSSL
+                # transcript, certificate details, or exported key bytes.
+                for filename, linenum in re.findall(
+                    r"([A-Za-z0-9_-]*tls[0-9]*[.]c):(\\d+)", line
+                ):
+                    source_locations.append(filename + ":" + linenum)
+        source_locations = source_locations[-12:]
         print(
             "OpenSSL independent exporter peer failed (returncode={}; "
-            "classification={}; native={})".format(
-                process.returncode, markers, server_status
+            "classification={}; native={}; source_lines={})".format(
+                process.returncode, markers, server_status, source_locations
             ),
             file=sys.stderr
         )
