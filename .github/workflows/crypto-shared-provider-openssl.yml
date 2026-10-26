@@ -10,6 +10,7 @@ on:
       - "tests/sdk/openssl-client.c"
       - "tests/sdk/CMakeLists.txt"
       - "tools/qualify_crypto_shared_openssl.sh"
+      - "tools/qualify_crypto_exporter_openssl.sh"
       - "tools/assemble_gmssl.cmake"
       - "providers/gmssl/hardening/**"
       - "providers/gmssl/patches/**"
@@ -99,6 +100,9 @@ jobs:
           bash tools/qualify_crypto_shared_openssl.sh \
             "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_client" \
             "$RUNNER_TEMP/crypto-shared-peer" 9740
+          bash tools/qualify_crypto_exporter_openssl.sh \
+            "$GITHUB_WORKSPACE/build-sdk/crypto_sdk_openssl_server" \
+            "$RUNNER_TEMP/crypto-shared-peer" 9830
       - name: Upload independent test evidence without private keys
         if: always()
         uses: actions/upload-artifact@v4
