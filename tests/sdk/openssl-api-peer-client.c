@@ -30,6 +30,7 @@ static const unsigned char HELLO_RETRY_RANDOM[32] = {
 typedef struct handshake_observation {
     unsigned hello_retry_count;
     unsigned server_hello_count;
+    unsigned client_hello_count;
 } handshake_observation;
 
 static void observe_handshake(int write_p, int version, int content_type,
@@ -42,8 +43,13 @@ static void observe_handshake(int write_p, int version, int content_type,
     /* Observe ONLY public HRR magic at ServerHello.random, never print or
      * store any random, certificate, transcript or keying material bytes.
      */
-    if (write_p || !seen || content_type != SSL3_RT_HANDSHAKE
-        || !record || length < 38u || record[0] != SSL3_MT_SERVER_HELLO)
+    if (!seen || content_type != SSL3_RT_HANDSHAKE || !record ||
+        length < 4u) return;
+    if (write_p && record[0] == SSL3_MT_CLIENT_HELLO) {
+        ++seen->client_hello_count;
+        return;
+    }
+    if (write_p || length < 38u || record[0] != SSL3_MT_SERVER_HELLO)
         return;
     ++seen->server_hello_count;
     if (memcmp(record + 6u, HELLO_RETRY_RANDOM, 32u) == 0)
@@ -103,6 +109,7 @@ int main(int argc, char **argv)
     SSL_CTX *ctx = NULL;
     SSL *ssl = NULL;
     int fd = -1, rc = 1, version, port, stage = 0;
+    int ssl_connect_ret = 0, ssl_connect_error = 0, socket_errno = 0;
     unsigned char derived[KEY_LEN] = {0};
     handshake_observation obs = {0u, 0u};
     static const char LABEL[] = "EXPORTER-Channel-Binding";
@@ -153,8 +160,13 @@ int main(int argc, char **argv)
     if (fd < 0 || SSL_set_fd(ssl, fd) != 1) goto done;
 
     stage = 2;
-    if (SSL_connect(ssl) != 1 ||
-        SSL_get_verify_result(ssl) != X509_V_OK ||
+    ssl_connect_ret = SSL_connect(ssl);
+    if (ssl_connect_ret != 1) {
+        ssl_connect_error = SSL_get_error(ssl, ssl_connect_ret);
+        socket_errno = errno;
+        goto done;
+    }
+    if (SSL_get_verify_result(ssl) != X509_V_OK ||
         SSL_version(ssl) != version)
         goto done;
     if (version == TLS1_3_VERSION) {
@@ -192,15 +204,18 @@ done:
     if (rc) {
         fprintf(stderr,
             "CRYPTO_OPENSSL_API_PEER_RESULT version=%d mode=%s stage=%d"
-            " hrr=%u server_hello=%u ssl_reason=%lu\n",
+            " hrr=%u server_hello=%u client_hello=%u"
+            " connect_ret=%d ssl_error=%d socket_errno=%d ssl_reason=%lu\n",
             version, mode ? mode : "(null)", stage, obs.hello_retry_count,
-            obs.server_hello_count,
+            obs.server_hello_count, obs.client_hello_count,
+            ssl_connect_ret, ssl_connect_error, socket_errno,
             error_code ? ERR_GET_REASON(error_code) : 0ul);
     } else {
         fprintf(stderr,
             "CRYPTO_OPENSSL_API_PEER_RESULT version=%d mode=%s stage=5"
-            " hrr=%u server_hello=%u result=ok\n",
-            version, mode, obs.hello_retry_count, obs.server_hello_count);
+            " hrr=%u server_hello=%u client_hello=%u result=ok\n",
+            version, mode, obs.hello_retry_count,
+            obs.server_hello_count, obs.client_hello_count);
     }
     OPENSSL_cleanse(derived, sizeof(derived));
     if (ssl) SSL_free(ssl);
