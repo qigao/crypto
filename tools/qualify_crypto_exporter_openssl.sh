@@ -105,9 +105,17 @@ with Path(secret_path).open("wb") as output:
             "exporter_available": "keying material:" in evidence,
             "unexpected_eof": "unexpected eof" in evidence,
         }
+        server_log = Path(ca).parent / ("native-exporter-" + protocol + ".private")
+        server_status = "none"
+        if server_log.is_file():
+            for line in server_log.read_text(errors="replace").splitlines():
+                if line.startswith("Crypto test-only TLS server/exporter failed"):
+                    server_status = line
         print(
             "OpenSSL independent exporter peer failed (returncode={}; "
-            "classification={})".format(process.returncode, markers),
+            "classification={}; native={})".format(
+                process.returncode, markers, server_status
+            ),
             file=sys.stderr
         )
         raise SystemExit(1)
