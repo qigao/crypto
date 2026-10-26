@@ -49,8 +49,8 @@ jobs:
 
 
   candidate-static-native:
-    name: "Opt-in GmSSL CCS/HRR static SDK / ${{ matrix.os }"
-    runs-on: "${{ matrix.os }"
+    name: "Opt-in GmSSL CCS/HRR static SDK / ${{ matrix.os }}"
+    runs-on: "${{ matrix.os }}"
     timeout-minutes: 75
     strategy:
       fail-fast: false
@@ -164,11 +164,11 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: crypto-port14-static-${{ matrix.os }
+          name: crypto-port14-static-${{ matrix.os }}
           path: |
             build-crypto/candidate-archive.json
             build-crypto/Testing/Temporary/LastTest.log
             build-sdk/Testing/Temporary/LastTest.log
             build-owner/Testing/Temporary/LastTest.log
-            ${{ runner.temp }/gmssl-candidate-source.json
+            ${{ runner.temp }}/gmssl-candidate-source.json
           if-no-files-found: warn
