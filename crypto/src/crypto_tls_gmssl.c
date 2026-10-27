@@ -30,6 +30,7 @@ struct crypto_tls_session {
     int connection_initialized;
     int handshake_started;
     int auth_required;
+    int auth_configured;
     int auth_verified;
     uint32_t auth_protocol;
     crypto_tls_result terminal_handshake_error;
@@ -327,6 +328,13 @@ static crypto_tls_result create_session_impl(
     s->transport = *io;
     s->auth_required = auth && options->role == CRYPTO_TLS_SERVER
         && auth->client_auth == CRYPTO_TLS_CLIENT_AUTH_REQUIRED;
+    /* Also seal client-identity sessions on fatal handshake failure.
+     * A rejected client certificate or verified server trust failure must
+     * never be retried on the same native TLS association.
+     */
+    s->auth_configured = s->auth_required ||
+        (auth && options->role == CRYPTO_TLS_CLIENT
+         && auth->client_certificate_file != NULL);
     s->auth_protocol = options->protocol;
     identity_cert = auth && options->role == CRYPTO_TLS_CLIENT
         ? auth->client_certificate_file : options->certificate_file;
@@ -476,7 +484,7 @@ crypto_tls_result crypto_tls_session_handshake(crypto_tls_session *s)
             status = map_backend_result(result);
             if (status == CRYPTO_TLS_OK)
                 status = completed_handshake(s);
-            if (s->auth_required &&
+            if (s->auth_configured &&
                 (status == CRYPTO_TLS_BACKEND_ERROR
                     || status == CRYPTO_TLS_CLOSED))
                 s->terminal_handshake_error = status;
@@ -566,7 +574,7 @@ crypto_tls_result crypto_tls_session_shutdown(crypto_tls_session *s)
     if (status != CRYPTO_TLS_OK) return status;
     if (atomic_load_explicit(&s->cancelled, memory_order_acquire))
         status = CRYPTO_TLS_CANCELLED;
-    else if (s->auth_required &&
+    else if (s->auth_configured &&
         s->terminal_handshake_error != CRYPTO_TLS_OK)
         status = s->terminal_handshake_error;
     else {
