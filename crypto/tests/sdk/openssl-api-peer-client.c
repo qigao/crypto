@@ -120,7 +120,7 @@ int main(int argc, char **argv)
     unsigned long error_code;
     const char *mode;
 
-    if (argc != 7) return 2;
+    if (argc != 7 && argc != 9) return 2;
     if (!strcmp(argv[1], "12")) version = TLS1_2_VERSION;
     else if (!strcmp(argv[1], "13")) version = TLS1_3_VERSION;
     else return 2;
@@ -144,6 +144,12 @@ int main(int argc, char **argv)
         goto done;
     if (!strcmp(mode, "p256") &&
         SSL_CTX_set1_groups_list(ctx, "P-256") != 1)
+        goto done;
+    /* Independent OpenSSL3-only client identity, never linked to Crypto. */
+    if (argc == 9 &&
+        (SSL_CTX_use_certificate_chain_file(ctx, argv[7]) != 1
+        || SSL_CTX_use_PrivateKey_file(ctx, argv[8], SSL_FILETYPE_PEM) != 1
+        || SSL_CTX_check_private_key(ctx) != 1))
         goto done;
     ssl = SSL_new(ctx);
     /* This specifically qualifies HelloRetryRequest. The Crypto server
@@ -213,9 +219,9 @@ done:
     } else {
         fprintf(stderr,
             "CRYPTO_OPENSSL_API_PEER_RESULT version=%d mode=%s stage=5"
-            " hrr=%u server_hello=%u client_hello=%u result=ok\n",
+            " hrr=%u server_hello=%u client_hello=%u result=ok client_identity=%d\n",
             version, mode, obs.hello_retry_count,
-            obs.server_hello_count, obs.client_hello_count);
+            obs.server_hello_count, obs.client_hello_count, argc == 9);
     }
     OPENSSL_cleanse(derived, sizeof(derived));
     if (ssl) SSL_free(ssl);
