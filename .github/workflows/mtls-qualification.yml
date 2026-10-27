@@ -8,7 +8,7 @@ on:
       - "crypto/tests/sdk/**"
       - "crypto/tools/stage_mtls_gmssl_overlay.py"
       - "vendor/gmssl-extensions/patches/tls12-empty-authorities.cmake"
-      - "vendor/gmssl-extensions/patches/tls13-client-cert-ccs.cmake"
+      - "vendor/gmssl-extensions/src/tls13-handshake-reader.h"
       - "crypto/tests/sdk/python_mtls.py"
       - "crypto/tests/owner/**"
       - "crypto/tools/audit_static_crypto.py"
