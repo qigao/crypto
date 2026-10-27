@@ -6,6 +6,7 @@
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
 #include <crypto/tls_peer.h>
+#include <crypto/tls_auth.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -126,6 +127,7 @@ int main(int argc, char **argv)
     crypto_tls_provider *provider = NULL;
     crypto_tls_session *session = NULL;
     crypto_tls_session_options options;
+    crypto_tls_auth_options_v1_3 auth;
     crypto_tls_io io;
     crypto_tls_result status;
     server_transport transport = {-1};
@@ -134,17 +136,20 @@ int main(int argc, char **argv)
     static const uint8_t reply[] =
         "HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
     int port, proto, step, done_handshake = 0, got_request = 0, phase = 0;
+    int required_auth;
+    uint32_t authenticated = 0u;
     int64_t deadline;
     size_t bytes = 0u, i;
     int rc = 1;
     status = CRYPTO_TLS_INVALID_ARGUMENT;
-    if (argc != 6) return 2;
+    if (argc != 6 && argc != 7) return 2;
+    required_auth = argc == 7;
     if (strcmp(argv[1], "12") == 0) proto = CRYPTO_TLS_1_2;
     else if (strcmp(argv[1], "13") == 0) proto = CRYPTO_TLS_1_3;
     else return 2;
     port = atoi(argv[2]);
     if (port <= 0 || port > 65535 || !argv[3][0] || !argv[4][0]
-        || !argv[5][0]) return 2;
+        || !argv[5][0] || (required_auth && !argv[6][0])) return 2;
 
     (void)signal(SIGPIPE, SIG_IGN);
     phase = 1;
@@ -168,10 +173,19 @@ int main(int argc, char **argv)
     io.read = on_read;
     io.write = on_write;
 
+    memset(&auth, 0, sizeof(auth));
+    auth.struct_size = sizeof(auth);
+    if (required_auth) {
+        auth.client_auth = CRYPTO_TLS_CLIENT_AUTH_REQUIRED;
+        auth.client_ca_file = argv[6];
+    }
     phase = 2;
     if (crypto_tls_provider_create(CRYPTO_TLS_ABI_VERSION, &provider)
             != CRYPTO_TLS_OK
-        || crypto_tls_session_create(provider, &options, &io, &session)
+        || (required_auth
+            ? crypto_tls_session_create_auth_v1_3(
+                provider, &options, &auth, &io, &session)
+            : crypto_tls_session_create(provider, &options, &io, &session))
             != CRYPTO_TLS_OK
         || crypto_tls_peer_abi_version() != CRYPTO_TLS_PEER_ABI_VERSION)
         goto done;
@@ -187,7 +201,11 @@ int main(int argc, char **argv)
         pause_one_ms();
     }
     if (!done_handshake) goto done;
-    fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE handshake_complete protocol=%d\n", proto);
+    if (required_auth && (crypto_tls_session_client_authenticated_v1_3(
+            session, &authenticated) != CRYPTO_TLS_OK || authenticated != 1u))
+        goto done;
+    fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE handshake_complete protocol=%d auth=%d\n",
+        proto, required_auth);
 
     /* OpenSSL s_client -keymatexport uses no exporter context. The CNet
      * context-present flag is tested separately using both native peers.
@@ -249,7 +267,7 @@ done:
         rc = 1;
     close(transport.fd);
     if (rc)
-        fprintf(stderr, "Crypto test-only TLS server/exporter failed (protocol=%d,phase=%d,status=%d,handshake=%d,request=%d)\n",
-                proto, phase, (int)status, done_handshake, got_request);
+        fprintf(stderr, "Crypto test-only TLS server/exporter failed (protocol=%d,phase=%d,status=%d,handshake=%d,request=%d,client_auth=%d)\n",
+                proto, phase, (int)status, done_handshake, got_request, required_auth);
     return rc;
 }
