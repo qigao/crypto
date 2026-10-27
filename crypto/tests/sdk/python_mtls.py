@@ -362,8 +362,8 @@ def native_to_python(native_client: str, f: dict[str, Path],
 
 
 def run(native_server: str, native_client: str, destination: Path) -> None:
-    require(ssl.OPENSSL_VERSION_INFO[0] >= 3,
-            "Python ssl needs an actively supported TLS1.3 implementation")
+    require(ssl.HAS_TLSv1_3,
+            "Python runtime lacks required TLS1.3 support")
     destination.mkdir(parents=True, exist_ok=True)
     # Temp root and every key are private and deleted on failures, too.
     with tempfile.TemporaryDirectory(dir=destination, prefix="mtls-private-") as td:
