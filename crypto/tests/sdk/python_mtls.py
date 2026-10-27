@@ -226,7 +226,7 @@ def safe_native_diagnostic(raw: bytes) -> str:
         # Print only native filename/line evidence, never error_print's data,
         # X.509 dumps, CertificateVerify, transcript, or key materials.
         markers.extend(re.findall(
-            r"(?:tls12|tls13|tls|tls_vrf|x509_cer|x509_ext)\\.c:[0-9]{1,5}",
+            r"(?:tls12|tls13|tls|tls_vrf|x509_cer|x509_ext)\.c:[0-9]{1,5}",
             line,
         )[:4])
     phases = " | ".join(x[:240] for x in safe if pattern.search(x))[-850:]
