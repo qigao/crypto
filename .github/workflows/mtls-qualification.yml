@@ -45,11 +45,8 @@ jobs:
           else
             brew install ninja pkg-config
           fi
-          python3 -m pip install --disable-pip-version-check --no-cache-dir             "cryptography==46.0.4"
-          python3 -c 'import ssl; import cryptography; assert ssl.HAS_TLSv1_3'
-          if [[ "$RUNNER_OS" == Linux || "$RUNNER_OS" == macOS ]]; then
-            true
-          fi
+          python3 -m pip install --disable-pip-version-check --no-cache-dir "cryptography==46.0.4"
+          python3 -c 'import ssl, cryptography; assert ssl.HAS_TLSv1_3'
       - name: Pinned port14 source from qigao/vcpkg-cache via curl
         shell: bash
         run: |
