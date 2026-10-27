@@ -99,7 +99,7 @@ jobs:
           path = candidates[0]
           lines = path.read_text(encoding="utf-8").splitlines()
           print("PINNED_TLS12_SITE", path.parent.parent.name, "lines", len(lines))
-          for i in range(2248, 2283):
+          for i in list(range(1640, 1704)) + list(range(2248, 2283)):
               print("PINNED_TLS12_LINE", i, lines[i - 1].strip())
           PY
       - name: Build, run native CTest, install one static Crypto archive
