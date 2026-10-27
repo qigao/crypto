@@ -23,6 +23,8 @@ CRYPTO_SYMBOLS = (
     "crypto_asn1_ecdsa_signature_decode",
     "crypto_asn1_rfc8410_spki_encode",
     "crypto_asn1_rfc8410_pkcs8_encode",
+    "crypto_x509_der_inspect", "crypto_x509_der_chain_next",
+    "crypto_x509_der_common_name", "crypto_x509_der_get_public_key_kind",
 )
 ASN1_SYMBOLS = (
     "salts_asn1_reader_init", "salts_asn1_reader_next",

@@ -12,6 +12,8 @@ REQUIRED = [
     "crypto/CMakeLists.txt", "crypto/src/asn1/crypto.c",
     "crypto/include/crypto/asn1_crypto.h", "crypto/vcpkg.json",
     "crypto/cmake/CryptoConfig.cmake.in", "crypto/tools/audit_static_crypto.py",
+    "crypto/include/crypto/x509_der.h", "crypto/src/crypto_x509_der.c",
+    "crypto/tests/x509/test_x509_der.c",
 ]
 errors = []
 for item in REQUIRED:

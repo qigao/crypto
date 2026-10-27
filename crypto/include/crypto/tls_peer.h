@@ -46,7 +46,9 @@ CRYPTO_TLS_API crypto_tls_result crypto_tls_peer_features_v1_2(
  * On other errors both out and *out_size remain unchanged.
  * A server with no peer certificate returns PEER_CERT_ABSENT.
  * Maximum payload is 4096 bytes; larger chains fail closed.
- * The caller must parse/validate DER independently if needed.
+ * Caller-owned concatenated DER may be inspected by
+ * crypto_x509_der_chain_next() after this copy. Structural inspection is
+ * NEVER TLS certificate trust, signature or hostname verification.
  */
 CRYPTO_TLS_API crypto_tls_result crypto_tls_session_copy_peer_chain_v1_2(
     crypto_tls_session *session, uint8_t *out, size_t capacity,

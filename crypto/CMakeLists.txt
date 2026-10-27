@@ -106,6 +106,7 @@ add_library(salts_crypto STATIC
   src/crypto_sha256.c
   src/crypto_random.c
   src/asn1/crypto.c
+  src/crypto_x509_der.c
   $<TARGET_OBJECTS:crypto_libecc_ed448_objects>)
 add_library(Salts::Crypto ALIAS salts_crypto)
 set_target_properties(salts_crypto PROPERTIES
@@ -194,4 +195,5 @@ if(BUILD_TESTING)
   enable_language(CXX)
   add_subdirectory(tests/algorithms)
   add_subdirectory(tests/asn1)
+  add_subdirectory(tests/x509)
 endif()
