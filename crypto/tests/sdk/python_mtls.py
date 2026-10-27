@@ -32,6 +32,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
+from python_mtls_record_mutation import relay_tls12_certificate_verify
+
 ADDRESS = "127.0.0.1"
 REQUEST = b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"
 RESPONSE = b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
@@ -435,6 +437,70 @@ def native_to_python(native_client: str, f: dict[str, Path],
         worker.join(timeout=1.0)
 
 
+def reject_corrupted_tls12_certificate_verify(
+    native_server: str, f: dict[str, Path], folder: Path,
+) -> None:
+    """Require actual native rejection of ONE tampered TLS1.2 client signature."""
+    secret = folder / "tls12-bad-certverify.secret"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as relay_listener:
+        relay_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        relay_listener.bind((ADDRESS, 0))
+        relay_listener.listen(1)
+        relay_port = relay_listener.getsockname()[1]
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind((ADDRESS, 0))
+            origin_port = probe.getsockname()[1]
+        state: dict[str, object] = {"mutations": 0}
+        thread = threading.Thread(
+            target=relay_tls12_certificate_verify,
+            args=(relay_listener, origin_port, state),
+            daemon=True,
+        )
+        process = subprocess.Popen(
+            [
+                native_server, "12", str(origin_port),
+                str(f["server"]), str(f["server-key"]), str(secret), str(f["ca"]),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        thread.start()
+        try:
+            client_context = python_tls_context("client", "12", f, "client")
+            accepted, client_reason = python_client_to_native(
+                client_context, relay_port, "12", "localhost",
+            )
+            _stdout, stderr = process.communicate(timeout=TIMEOUT)
+            thread.join(timeout=4.0)
+            require(not thread.is_alive(), "TLS1.2 record mutation relay did not quiesce")
+            require(
+                state.get("mutations") == 1,
+                "TLS1.2 CertificateVerify mutation was not executed exactly once: "
+                + str(state.get("transport_error", "no full signed record")),
+            )
+            require(not accepted and process.returncode != 0,
+                    "native TLS1.2 accepted corrupted client CertificateVerify")
+            require(
+                b"phase=3" in stderr and b"handshake=0" in stderr
+                and b"client_auth=1" in stderr,
+                "TLS1.2 CertificateVerify corruption was not a handshake rejection: "
+                + safe_native_diagnostic(stderr),
+            )
+            require(b"CRYPTO_TEST_PYTHON_MTLS_CLEAN=1" in stderr
+                    and not secret.exists(),
+                    "TLS1.2 CertificateVerify rejection did not clean up static owner")
+            require(
+                client_reason.startswith(("SSLError:", "SSLEOFError:")),
+                "Python TLS1.2 client unexpectedly completed invalid signature handshake",
+            )
+            print("PASS Python TLS12 corrupted CertificateVerify -> native rejection")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=4)
+            relay_listener.close()
+            thread.join(timeout=4)
+
+
 def run(native_server: str, native_client: str, destination: Path) -> None:
     require(ssl.HAS_TLSv1_3,
             "Python runtime lacks required TLS1.3 support")
@@ -455,6 +521,10 @@ def run(native_server: str, native_client: str, destination: Path) -> None:
                 )
             for case in ("client", *CASE_NAMES, *NATIVE_CLIENT_REJECTIONS):
                 native_to_python(native_client, fixtures, proto, case)
+            if proto == "12":
+                reject_corrupted_tls12_certificate_verify(
+                    native_server, fixtures, folder,
+                )
 
 
 if __name__ == "__main__":
