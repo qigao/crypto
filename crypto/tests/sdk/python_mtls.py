@@ -226,7 +226,7 @@ def safe_native_diagnostic(raw: bytes) -> str:
     # Only fixed phase/status/counter lines; never TLS record bytes or keys.
     safe = raw.decode(errors="replace").splitlines()
     pattern = re.compile(
-        r"^(Crypto test-only TLS server/exporter failed |"
+        r"^(Crypto test-only TLS server/exporter failed |facade Python TLS |"
         r"CRYPTO_TEST_REVERSE_PHASE (handshake_complete|request_received|response_sent)|"
         r"CRYPTO_TLS_PRIVATE_(STATE|HANDSHAKE_DIAG) )"
     )
@@ -347,7 +347,8 @@ def native_to_python(native_client: str, f: dict[str, Path],
                 and results.get("request") is True
                 and results.get("peer_version") == "TLSv1." + proto[-1],
                 f"native client TLS{proto} rejected valid identity"
-                f" (status={result.returncode}, peer={results})",
+                f" (status={result.returncode}, peer={results})"
+                f" | {safe_native_diagnostic(result.stderr)}",
             )
         else:
             require(
