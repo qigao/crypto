@@ -30,7 +30,7 @@ static int64_t io_read(void *user, uint8_t *data, size_t len)
 }
 
 #define CHECK(x) do { if (!(x)) { \
-    fprintf(stderr, "auth contract failed at line %d: %s\\n", __LINE__, #x); \
+    fprintf(stderr, "auth contract failed at line %d: %s\n", __LINE__, #x); \
     return 1; \
 } } while (0)
 
@@ -130,6 +130,54 @@ int main(void)
     auth.client_auth = CRYPTO_TLS_CLIENT_AUTH_REQUIRED; EXPECT_BAD();
     auth.client_auth = CRYPTO_TLS_CLIENT_AUTH_NONE;
     CHECK(options.struct_size == original_v1_size);
+
+    /* A backend failure during CA/key loading is a true rejected create.
+     * No half-initialized owner, callback borrow or output mutation remains.
+     */
+    options.role = CRYPTO_TLS_SERVER;
+    options.hostname = NULL;
+    options.ca_file = NULL;
+    options.certificate_file = SDK_SERVER_CERT_FILE;
+    options.private_key_file = SDK_SERVER_KEY_FILE;
+    auth.client_auth = CRYPTO_TLS_CLIENT_AUTH_REQUIRED;
+    auth.client_ca_file = "crypto-tls-mtls-CA-must-not-exist.pem";
+    for (int attempt = 0; attempt < 48; ++attempt) {
+        crypto_tls_session *out = sentinel;
+        CHECK(crypto_tls_session_create_auth_v1_3(
+            provider, &options, &auth, &io, &out) == CRYPTO_TLS_BACKEND_ERROR);
+        CHECK(out == sentinel);
+        CHECK(crypto_tls_provider_session_count(provider, &count) == CRYPTO_TLS_OK
+            && count == 0u);
+    }
+    auth.client_ca_file = SDK_CA_FILE;
+    options.private_key_file = "crypto-tls-mtls-key-must-not-exist.pem";
+    for (int attempt = 0; attempt < 48; ++attempt) {
+        crypto_tls_session *out = sentinel;
+        CHECK(crypto_tls_session_create_auth_v1_3(
+            provider, &options, &auth, &io, &out) == CRYPTO_TLS_BACKEND_ERROR);
+        CHECK(out == sentinel);
+        CHECK(crypto_tls_provider_session_count(provider, &count) == CRYPTO_TLS_OK
+            && count == 0u);
+    }
+    options.private_key_file = SDK_SERVER_KEY_FILE;
+    session = NULL;
+    CHECK(crypto_tls_session_create_auth_v1_3(
+        provider, &options, &auth, &io, &session) == CRYPTO_TLS_OK);
+    CHECK(session != NULL);
+    /* Never report authenticated mTLS before peer CertificateVerify. */
+    {
+        uint32_t authenticated = 77u;
+        CHECK(crypto_tls_session_client_authenticated_v1_3(
+            session, &authenticated) == CRYPTO_TLS_AGAIN);
+        CHECK(authenticated == 77u);
+        CHECK(crypto_tls_session_cancel(session) == CRYPTO_TLS_OK);
+        CHECK(crypto_tls_session_client_authenticated_v1_3(
+            session, &authenticated) == CRYPTO_TLS_CANCELLED);
+        CHECK(authenticated == 77u);
+    }
+    CHECK(crypto_tls_session_destroy(&session) == CRYPTO_TLS_OK);
+    CHECK(crypto_tls_provider_session_count(provider, &count) == CRYPTO_TLS_OK
+        && count == 0u);
 
     CHECK(crypto_tls_provider_destroy(&provider) == CRYPTO_TLS_OK);
     CHECK(provider == NULL);
