@@ -248,7 +248,7 @@ def safe_native_diagnostic(raw: bytes) -> str:
     safe = raw.decode(errors="replace").splitlines()
     pattern = re.compile(
         r"^(Crypto test-only TLS server/exporter failed |facade Python TLS |"
-        r"CRYPTO_TEST_PYTHON_MTLS_(?:PHASE=|TERMINAL=)|"
+        r"CRYPTO_TEST_PYTHON_MTLS_(?:PHASE=|TERMINAL=|CLEAN=)|"
         r"CRYPTO_TEST_REVERSE_PHASE (handshake_complete|request_received|response_sent)|"
         r"CRYPTO_TLS_PRIVATE_(STATE|HANDSHAKE_DIAG) )"
     )
@@ -291,6 +291,11 @@ def python_to_native(native_server: str, f: dict[str, Path],
                 f"native TLS{proto} server {case} did not terminate"
             ) from exc
         require(not work_secret.exists(), "mTLS test wrote forbidden exporter secret")
+        require(
+            b"CRYPTO_TEST_PYTHON_MTLS_CLEAN=1" in stderr,
+            f"native TLS{proto}/{case} did not prove zero owned sessions"
+            f" and quiescent provider release: {safe_native_diagnostic(stderr)}",
+        )
         if case == "client":
             require(success and proc.returncode == 0,
                     f"native server TLS{proto} rejected valid Python client: "
