@@ -105,6 +105,13 @@ jobs:
           print("PINNED_TLS12_SITE", path.parent.parent.name, "lines", len(lines))
           for i in list(range(1640, 1704)) + list(range(2248, 2283)):
               print("PINNED_TLS12_LINE", i, lines[i - 1].strip())
+          tls13 = path.with_name("tls13.c")
+          if not tls13.is_file():
+              raise SystemExit("GmSSL pinned TLS13 source missing")
+          lines13 = tls13.read_text(encoding="utf-8").splitlines()
+          print("PINNED_TLS13_SITE", tls13.parent.parent.name, "lines", len(lines13))
+          for i in range(6850, 6910):
+              print("PINNED_TLS13_LINE", i, lines13[i - 1].strip())
           PY
       - name: Build, run native CTest, install one static Crypto archive
         shell: bash
