@@ -165,7 +165,7 @@ for proto in 12 13; do
   cmp -s "$tmp/crypto.secret" "$tmp/openssl.secret" || {
     echo "mTLS exporter mismatch for TLS $proto" >&2; exit 1;
   }
-  grep -q "handshake_complete protocol=\$proto auth=1" "$tmp/native.private"
+  grep -q "handshake_complete protocol=$proto auth=1" "$tmp/native.private"
   rm -f "$tmp/crypto.secret" "$tmp/openssl.secret"
   echo "mTLS Crypto-server/OpenSSL3-client TLS $proto: positive PASS"
 
@@ -252,6 +252,8 @@ for proto in 12 13; do
     test ! -e "$tmp/negative-two.secret"
     echo "mTLS Crypto-client/OpenSSL3-server TLS $proto: $negative rejected PASS"
   done
-  cleanup
+  kill "$server_pid" 2>/dev/null || true
+  wait "$server_pid" 2>/dev/null || true
+  server_pid=""
 done
 echo "Independent OpenSSL3/Crypto two-role mTLS TLS1.2+TLS1.3: PASS"
