@@ -94,6 +94,7 @@ jobs:
           gmssl="$RUNNER_TEMP/gmssl-sdk/$TRIPLET"
           cmake -S . -B build -G Ninja \
             -DBUILD_TESTING=ON \
+            -DCRYPTO_TLS_TEST_HANDSHAKE_DIAGNOSTICS=ON \
             -DCRYPTO_GMSSL_ROOT="$gmssl" \
             "-DCMAKE_INSTALL_PREFIX=$RUNNER_TEMP/crypto-sdk"
           cmake --build build --parallel 3
