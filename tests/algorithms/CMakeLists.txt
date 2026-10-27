@@ -4,7 +4,7 @@ target_link_libraries(salts_crypto_sha_ed448_vectors PRIVATE Salts::Crypto)
 # Source-tree tests use the verified pinned GmSSL header; installed tests
 # resolve their own header from the Crypto SDK instead.
 target_include_directories(salts_crypto_sha_ed448_vectors PRIVATE
-  "${CRYPTO_GMSSL_SOURCE}/include")
+  "${_gmssl_prefix}/include")
 add_test(NAME crypto.algorithms.sha256_sm3_ed448_rfc8032 COMMAND salts_crypto_sha_ed448_vectors)
 set_tests_properties(crypto.algorithms.sha256_sm3_ed448_rfc8032 PROPERTIES TIMEOUT 120)
 

@@ -1,89 +1,72 @@
-# Crypto — one static native owner
+# Salts::Crypto — one static archive, GmSSL supplied by vcpkg-cache
 
-qigao/crypto is the single source and installed package owner for native
-cryptographic algorithms and TLS functionality. It delivers exactly one
-static archive and one CMake target:
+`qigao/crypto` owns the **Crypto facade, algorithm API and libecc integration**.
+`qigao/vcpkg-cache/ports/gmssl` is the **sole source, patch, version and binary
+package owner** for GmSSL. There is no `providers/gmssl/`, local GmSSL clone,
+source assembly, fallback or compatibility Provider in this repository.
 
-~~~cmake
+The sole exported installed library is `Salts::Crypto`:
+
+```cmake
 find_package(Crypto 0.1 CONFIG REQUIRED)
 target_link_libraries(application PRIVATE Salts::Crypto)
-~~~
-
-No alternative target namespace, provider DSO, TLSHost binary, libecc library,
-separately installed GmSSL archive, or compatibility target is published.
-Missing verified input fails at configure time.
-
-The archive combines pinned reviewed GmSSL 3.2 source (TLS1.2/1.3, X.509,
-SM2, SM3, SHA and ciphers), C11 TLS facade, bounded CipherBIO, and migrated
-SHA256 and Ed448 APIs formerly built by SaltsUtils. The Ed448-required
-libecc WEI448 arithmetic and SHAKE256 are compiled privately. The redundant
-libecc SHA256 and unsafe pseudo-random generator are deleted; native random
-bytes come from the one OS CSPRNG implementation.
-
-## Build inputs
-
-A provenance-verified patched GmSSL checkout and its build-only PIC
-libgmssl.a or gmssl.lib must be supplied as CRYPTO_GMSSL_SOURCE and
-CRYPTO_GMSSL_STATIC; the project never fetches or substitutes providers.
-The build merges those input objects into libsalts_crypto.a (or salts_crypto.lib
-on Windows); the staging GmSSL archive is not installed or exported.
-
-The installed CryptoTargets.cmake exports only Salts::Crypto.
-The Crypto facade headers are under `include/crypto/`. SHA256 and Ed448
-are declared in `crypto/sha256.h` and `crypto/ed448.h`, both using
-`crypto/status.h`. `include/salts/crypto.h` is deleted, without a forwarding
-header, duplicate implementation, or target alias. Existing algorithm C ABI
-symbols remain unchanged.
-libecc's dual-license notice is preserved with the SDK; its headers remain private.
-`vendor/libecc/CMakeLists.txt` owns the explicit Ed448-only internal OBJECT
-source list and its configuration, but never installs or exports a separate
-libecc archive, target or package. The objects are embedded directly in
-`Salts::Crypto` before the pinned GmSSL archive is merged.
-
-The removed `crypto/provider.h` was only a versioned SM3 trampoline.
-There is no generic Crypto Provider ABI or SM3 wrapper now. Downstream code
-needing SM3 includes the installed pinned `gmssl/sm3.h` and calls the
-GmSSL `sm3_*` functions in the same `Salts::Crypto` static archive.
-The facade's TLS session ownership API remains independent of that deleted
-SM3 ABI. Only the explicitly published GmSSL headers are supported by this
-installed SDK; other GmSSL internal headers remain private.
-
-## Source layout and provenance
-
-`providers/gmssl/src/` and `providers/gmssl/include/gmssl/` contain the
-13 canonical GmSSL extension source/header blobs. `providers/gmssl/patches/`
-contains **only** the immutable 40 historical patch scripts, not C/header
-implementations. Historical patch scripts apply through a temporary source
-assembly directory; original source identity and the 95-entry handoff archive
-digest are checked independently.
-
-See [the current GmSSL source README](providers/gmssl/README.md) and
-[import status](providers/gmssl/provenance/IMPORT-STATUS.md).
-`providers/gmssl/provenance/HISTORICAL-HANDOFF.md` is the byte-identical
-original README; its old repository-creation instructions are historical,
-not current build instructions. The provenance manifest is likewise immutable.
-
-## Consumer example
-
-```c
-#include <crypto/sha256.h>
-#include <crypto/ed448.h>
-#include <gmssl/sm3.h>
 ```
 
-Link only `Salts::Crypto`. Only `gmssl/sm3.h` is installed as a direct
-GmSSL API surface in the current SDK; other internal GmSSL headers are not
-a supported consumer contract without separate acceptance. Neither the
-generic `crypto/provider.h` nor `salts/crypto.h` exists.
+Its one installed `libsalts_crypto.a` or `salts_crypto.lib` combines the
+Crypto-owned C11 TLS/CipherBIO/SHA256/Ed448 sources, reviewed private libecc
+Ed448-only objects, **and the GmSSL static archive obtained from vcpkg**.
+`GmSSL::GmSSL` is build-only, never exported or transitively linked by an
+installed Crypto target; no second GmSSL SDK archive/DSO is shipped by Crypto.
+Crypto also installs the pinned GmSSL Apache-2.0 license and vendored
+libecc BSD license with the combined archive.
 
-## Required exact-head acceptance
+## Install and build
 
-The crypto-static-sdk.yml pipeline covers installed C11 and C++17 consumers,
-SHA256/SM3/Ed448 RFC vectors, real TLS1.2/1.3 and independent OpenSSL3 peers,
-CipherBIO, relocated SDK, single static archive and symbol audits, and fully
-source-instrumented ASan/UBSan/LSan and TSan. Migration to static packaging
-does not constitute production CNet TLS cutover and does not change the
-GmSSL 3.2.0#13 production registry pin. Both remain separately gated.
+Install the reviewed `gmssl 3.2.0#14` port from
+[qigao/vcpkg-cache](https://github.com/qigao/vcpkg-cache).
+The Crypto repo owns its `vcpkg.json` manifest; the shared vcpkg setup
+action supplies pinned tooling and `VCPKG_OVERLAY_PORTS`. CI uses the
+actual merged port14 commit
+`d2ce09ebd3cf127338eea5c8d87a588aeb9d127c` (merged vcpkg-cache PR #214).
 
-The old dynamic Provider/Host/DSO architecture has been removed, with no
-compatibility shims or provider fallbacks.
+For a GitHub Actions runner after executing that setup action:
+
+```bash
+python3 tools/ci/install_vcpkg_gmssl.py linux-x64
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  "-DCRYPTO_GMSSL_ROOT=$GITHUB_WORKSPACE/vcpkg_installed/x64-linux"
+cmake --build build
+ctest --test-dir build --output-on-failure
+cmake --install build --prefix /tmp/crypto-sdk
+```
+
+The installer rejects any nonmatching full #14 port Git tree (all 97 files), manifest or package-config
+Git blob; it never falls back to the public registry or an unverified local
+`gmssl.a`. Other qualified target triplets are selected by the script for
+Windows, macOS, Android ARM64 and iOS ARM64.
+
+Published direct GmSSL access is intentionally narrow: the Crypto SDK installs
+the exact `<gmssl/sm3.h>` from the vetted vcpkg package, and callers may use
+`sm3_init/update/finish` from **the same combined archive**. Other GmSSL
+headers remain private to the Crypto build. Public Crypto-owned interfaces are
+`<crypto/sha256.h>`, `<crypto/ed448.h>`, `<crypto/tls.h>`,
+`<crypto/tls_ext.h>`, `<crypto/tls_peer.h>`, and `<crypto/cipher_bio.h>`.
+There is no `<crypto/provider.h>` or `<salts/crypto.h>` legacy entrypoint.
+
+## Acceptance policy
+
+Crypto CI verifies Linux/Windows/macOS installed/relocated C11 and C++17
+consumers, real TLS1.2/1.3 with independent OpenSSL3 CA/SAN/HRR/exporter
+negative gates, RFC8032 Ed448, SHA256, direct SM3, Android/iOS cross-built
+installed SDK and static symbol cardinality. Source ASan/UBSan/LSan and TSan
+gates instrument Crypto/libecc **but not the cached GmSSL archive**. Fully
+source-instrumented GmSSL belongs in vcpkg-cache's own package qualification,
+using the same exact port identity.
+
+A failure against the official vcpkg port is a genuine migration blocker. Fix
+the vcpkg-cache port in a separately qualified change; do not restore
+`providers/gmssl`, relax TLS tests, substitute OpenSSL, or silently drop
+features. This repository migration alone does not release packages, switch
+production CNet, or alter its current GmSSL 3.2.0#13 pin.
+
+The GmSSL #14 port is now merged into vcpkg-cache master via [PR #214](https://github.com/qigao/vcpkg-cache/pull/214). Crypto's final installed SDK CI must pass against that exact merged port commit before Crypto #33 is merged. The historical #13 version remains available for explicitly pinned production CNet users; no CNet pin change is made here.
