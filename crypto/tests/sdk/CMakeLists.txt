@@ -111,6 +111,18 @@ if(CRYPTO_SDK_ENABLE_OPENSSL_PEER)
     # Pure OpenSSL3 test program: no Salts::Crypto or private GmSSL target.
     target_link_libraries(crypto_sdk_openssl_api_peer_client PRIVATE
       OpenSSL::SSL OpenSSL::Crypto)
+    # Both independent-OpenSSL peer roles exercise the installed static
+    # Crypto C11 ABI, including TLS1.2/1.3 peer-auth failure and cleanup.
+    # Never link OpenSSL into Salts::Crypto itself.
+    add_test(NAME crypto.installed.independent_openssl3_mtls
+      COMMAND bash
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/qualify_crypto_mtls_openssl.sh"
+        "$<TARGET_FILE:crypto_sdk_openssl_server>"
+        "$<TARGET_FILE:crypto_sdk_openssl_api_peer_client>"
+        "$<TARGET_FILE:crypto_sdk_openssl_client>"
+        "${CMAKE_CURRENT_BINARY_DIR}/private-mtls")
+    set_tests_properties(crypto.installed.independent_openssl3_mtls
+      PROPERTIES TIMEOUT 600 RESOURCE_LOCK crypto_mtls_peer_network)
   endif()
 endif()
 
