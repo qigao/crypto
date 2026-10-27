@@ -27,14 +27,16 @@ import threading
 import time
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 ADDRESS = "127.0.0.1"
 REQUEST = b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"
 RESPONSE = b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
-CASE_NAMES = ("missing", "wrongca", "eku", "expired", "chain")
+CASE_NAMES = ("missing", "wrongca", "eku", "expired", "chain", "badsig")
+SERVER_REJECTIONS = ("server-wrongca", "server-wrongsan")
 PROTOCOLS = {"12": ssl.TLSVersion.TLSv1_2, "13": ssl.TLSVersion.TLSv1_3}
 MIN_TLS_RESPONSE = b"HTTP/1.0 200"
 TIMEOUT = 22.0
@@ -131,6 +133,7 @@ def make_fixtures(folder: Path) -> dict[str, Path]:
         "wrongca": (wrong_name, wrong_key, ExtendedKeyUsageOID.CLIENT_AUTH, False, False),
         "eku": (root_name, root_key, ExtendedKeyUsageOID.SERVER_AUTH, False, False),
         "expired": (root_name, root_key, ExtendedKeyUsageOID.CLIENT_AUTH, True, False),
+        "badsig": (root_name, root_key, ExtendedKeyUsageOID.CLIENT_AUTH, False, False),
         # The intermediate is deliberately OMITTED from the on-wire PEM leaf.
         "chain": (intermediate_name, intermediate_key, ExtendedKeyUsageOID.CLIENT_AUTH, False, False),
     }
@@ -141,6 +144,21 @@ def make_fixtures(folder: Path) -> dict[str, Path]:
             key.public_key(), issuer, signing_key,
             eku=usage, expired=expired, server_san=san,
         )
+        if label == "badsig":
+            # Preserve DER lengths/public key. Flip ONLY the final RSA
+            # signature-value bit and independently prove signature failure.
+            wire = bytearray(leaf.public_bytes(serialization.Encoding.DER))
+            wire[-1] ^= 0x01
+            leaf = x509.load_der_x509_certificate(bytes(wire))
+            try:
+                root_key.public_key().verify(
+                    leaf.signature, leaf.tbs_certificate_bytes,
+                    padding.PKCS1v15(), leaf.signature_hash_algorithm,
+                )
+            except InvalidSignature:
+                pass
+            else:
+                raise GateFailure("invalid-signature test fixture still verifies")
         pem = folder / (label + ".pem")
         private = folder / (label + "-key.pem")
         pem.write_bytes(leaf.public_bytes(serialization.Encoding.PEM))
@@ -253,8 +271,16 @@ def python_to_native(native_server: str, f: dict[str, Path],
     # Deliberately no fixture contents in stdout/stderr logs.
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        context = python_tls_context("client", proto, f, case)
-        success, client_reason = python_client_to_native(context, port, proto, "localhost")
+        server_negative = case in SERVER_REJECTIONS
+        client_case = "client" if server_negative else case
+        context = python_tls_context(
+            "client", proto, f, client_case,
+            trusted_ca="wrongroot" if case == "server-wrongca" else "ca",
+        )
+        success, client_reason = python_client_to_native(
+            context, port, proto,
+            "invalid.example" if case == "server-wrongsan" else "localhost",
+        )
         try:
             stdout, stderr = proc.communicate(timeout=TIMEOUT)
         except subprocess.TimeoutExpired as exc:
@@ -273,13 +299,19 @@ def python_to_native(native_server: str, f: dict[str, Path],
             )
         else:
             require(not success and proc.returncode != 0,
-                    f"native server TLS{proto} ACCEPTED {case} client certificate")
+                    f"native server TLS{proto} ACCEPTED invalid {case} identity")
             require(
                 b"phase=3" in stderr and b"handshake=0" in stderr
                 and b"client_auth=1" in stderr,
                 f"native TLS{proto} {case}: rejection was NOT in handshake: "
                 + safe_native_diagnostic(stderr),
             )
+            if server_negative:
+                require(
+                    "SSLCertVerificationError" in client_reason,
+                    f"Python TLS{proto} did not prove server CA/SAN rejection: "
+                    + client_reason,
+                )
         print(f"PASS Python-client/native-C11-server TLS{proto} {case}")
     finally:
         if proc.poll() is None:
@@ -328,12 +360,16 @@ def native_to_python(native_client: str, f: dict[str, Path],
     )
     worker.start()
     sha = str(f["server-sha256"])
+    server_negative = case in SERVER_REJECTIONS
+    client_case = "client" if server_negative else case
     argv = [
-        native_client, proto, str(port), str(f["ca"]), "localhost",
+        native_client, proto, str(port),
+        str(f["wrongroot"] if case == "server-wrongca" else f["ca"]),
+        "invalid.example" if case == "server-wrongsan" else "localhost",
         "good", sha, str(f["server-der"]), "--mtls",
     ]
     if case != "missing":
-        argv.extend((str(f[case]), str(f[case + "-key"])))
+        argv.extend((str(f[client_case]), str(f[client_case + "-key"])))
     try:
         result = subprocess.run(
             argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -350,6 +386,16 @@ def native_to_python(native_client: str, f: dict[str, Path],
                 f"native client TLS{proto} rejected valid identity"
                 f" (status={result.returncode}, peer={results})"
                 f" | {safe_native_diagnostic(result.stderr)}",
+            )
+        elif server_negative:
+            # A bad server CA/SAN must be rejected by the native client
+            # during handshake, BEFORE any application HTTP request.
+            require(
+                result.returncode != 0
+                and b"valid Python TLS peer handshake failed" in result.stderr
+                and results.get("request") is not True,
+                f"native TLS{proto} ACCEPTED invalid Python server {case}: "
+                + safe_native_diagnostic(result.stderr),
             )
         else:
             require(
@@ -378,7 +424,7 @@ def run(native_server: str, native_client: str, destination: Path) -> None:
         folder.chmod(0o700)
         fixtures = make_fixtures(folder)
         for proto in PROTOCOLS:
-            for case in ("client", *CASE_NAMES):
+            for case in ("client", *CASE_NAMES, *SERVER_REJECTIONS):
                 # One isolated native process per tested server connection.
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as port_probe:
                     port_probe.bind((ADDRESS, 0))
@@ -386,7 +432,7 @@ def run(native_server: str, native_client: str, destination: Path) -> None:
                 python_to_native(
                     native_server, fixtures, folder, proto, case, port,
                 )
-            for case in ("client", *CASE_NAMES):
+            for case in ("client", *CASE_NAMES, *SERVER_REJECTIONS):
                 native_to_python(native_client, fixtures, proto, case)
 
 
