@@ -5,6 +5,7 @@
 #include <crypto/tls.h>
 #include <crypto/tls_ext.h>
 #include <crypto/tls_peer.h>
+#include <crypto/tls_auth.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -121,6 +122,7 @@ int main(int argc,char **argv)
     crypto_tls_provider *provider=NULL;
     crypto_tls_session *session=NULL;
     crypto_tls_session_options options;
+    crypto_tls_auth_options_v1_3 auth;
     crypto_tls_io io;
     static const char *alpn_names[] = {"http/1.1", "h2"};
     crypto_tls_session_info_v1_1 info;
@@ -135,12 +137,15 @@ int main(int argc,char **argv)
     crypto_tls_result status=CRYPTO_TLS_INVALID_ARGUMENT;
     transport t={-1,0,0};
     int port,protocol,want_success,success=0,step,rc=1;
+    int client_identity;
     int64_t deadline;
     static const uint8_t request[]="GET / HTTP/1.0\r\nHost: localhost\r\n\r\n";
     uint8_t response[8192];
     size_t total=0,sent=0;
     int sending=1;
-    if(argc!=8 && argc!=9 && argc!=10){fprintf(stderr,"usage: sdk-openssl-client 12|13 port ca-file hostname good|reject sha256-hex leaf-der [private-exporter-no-context [private-exporter-empty-context]]\n");return 2;}
+    if(argc!=8 && argc!=9 && argc!=10 && argc!=12){fprintf(stderr,"usage: sdk-openssl-client 12|13 port ca-file hostname good|reject sha256-hex leaf-der [private-exporter-no-context [private-exporter-empty-context [client-cert client-key]]]\n");return 2;}
+    client_identity = argc == 12;
+    if(client_identity && (!argv[10][0] || !argv[11][0]))return 2;
     if(strcmp(argv[1],"12")==0)protocol=CRYPTO_TLS_1_2;
     else if(strcmp(argv[1],"13")==0)protocol=CRYPTO_TLS_1_3;
     else return 2;
@@ -164,8 +169,18 @@ int main(int argc,char **argv)
     io.user=&t;
     io.write=socket_write;
     io.read=socket_read;
+    memset(&auth,0,sizeof(auth));
+    auth.struct_size=sizeof(auth);
+    if(client_identity){
+        auth.client_auth=CRYPTO_TLS_CLIENT_AUTH_NONE;
+        auth.client_certificate_file=argv[10];
+        auth.client_private_key_file=argv[11];
+    }
     if(crypto_tls_provider_create(CRYPTO_TLS_ABI_VERSION,&provider)!=CRYPTO_TLS_OK
-       || crypto_tls_session_create(provider,&options,&io,&session)!=CRYPTO_TLS_OK
+       || (client_identity
+           ? crypto_tls_session_create_auth_v1_3(
+               provider,&options,&auth,&io,&session)
+           : crypto_tls_session_create(provider,&options,&io,&session))!=CRYPTO_TLS_OK
        || crypto_tls_extension_abi_version()!=CRYPTO_TLS_EXTENSION_ABI_VERSION
        || crypto_tls_session_set_alpn_v1_1(session,alpn_names,2)!=CRYPTO_TLS_OK)
         goto done;
