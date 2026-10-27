@@ -6,6 +6,7 @@
 #include <crypto/tls_peer.h>
 #include <crypto/tls_auth.h>
 #include <gmssl/tls.h>
+#include <gmssl/x509_cer.h>
 
 #include <limits.h>
 #include <stdatomic.h>
