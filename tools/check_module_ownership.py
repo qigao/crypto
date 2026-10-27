@@ -13,6 +13,7 @@ REQUIRED = [
     "crypto/include/crypto/asn1_crypto.h", "crypto/vcpkg.json",
     "crypto/cmake/CryptoConfig.cmake.in", "crypto/tools/audit_static_crypto.py",
     "crypto/include/crypto/x509_der.h", "crypto/src/crypto_x509_der.c",
+    "crypto/include/crypto/tls_auth.h",
     "crypto/tests/x509/test_x509_der.c",
 ]
 errors = []
