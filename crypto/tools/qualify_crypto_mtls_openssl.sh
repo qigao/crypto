@@ -31,7 +31,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
   -addext "basicConstraints=critical,CA:TRUE" \
   -addext "keyUsage=critical,keyCertSign,cRLSign" >"$tmp/generate.private" 2>&1
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
-  -keyout "$tmp/wrongca-key.pem" -out "$tmp/wrongca.pem" \
+  -keyout "$tmp/wrongroot-key.pem" -out "$tmp/wrongroot.pem" \
   -subj "/CN=mtls-UNTRUSTED-issuer" \
   -addext "basicConstraints=critical,CA:TRUE" \
   -addext "keyUsage=critical,keyCertSign,cRLSign" >>"$tmp/generate.private" 2>&1
@@ -71,7 +71,7 @@ sign() {
 }
 sign server ca ca-key server
 sign client ca ca-key client
-sign wrongca wrongca wrongca-key client
+sign wrongca wrongroot wrongroot-key client
 sign eku ca ca-key eku
 sign intermediate ca ca-key intermediate
 # This leaf is signed by a valid intermediate, but the TLS client sends ONLY
