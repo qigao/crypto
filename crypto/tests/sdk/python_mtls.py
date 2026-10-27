@@ -173,6 +173,10 @@ def python_tls_context(role: str, proto: str, f: dict[str, Path],
     )
     ctx.minimum_version = ctx.maximum_version = PROTOCOLS[proto]
     ctx.set_ciphers("ECDHE-RSA-AES128-GCM-SHA256")
+    # The installed C11 facade is explicitly configured for secp256r1.
+    # Make the Python peer offer precisely that named group in TLS1.2/1.3;
+    # no fallback, inferred profile, or test-only Crypto provider is used.
+    ctx.set_ecdh_curve("prime256v1")
     ctx.set_alpn_protocols(["h2", "http/1.1"])
     if role == "client":
         ctx.check_hostname = True
