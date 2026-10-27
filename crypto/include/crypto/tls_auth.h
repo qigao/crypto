@@ -74,6 +74,14 @@ CRYPTO_TLS_API crypto_tls_result crypto_tls_session_create_auth_v1_3(
     const crypto_tls_io *io,
     crypto_tls_session **out_session);
 
+/* Server-only REQUIRED mode. Returns OK and writes 1 ONLY after a real
+ * verified peer chain and CertificateVerify completed. On an incomplete or
+ * rejected handshake, invalid role/policy, BUSY or cancellation, the
+ * caller-owned output is unchanged. This is NOT an anonymous TLS flag.
+ */
+CRYPTO_TLS_API crypto_tls_result crypto_tls_session_client_authenticated_v1_3(
+    crypto_tls_session *session, uint32_t *out_authenticated);
+
 #ifdef __cplusplus
 }
 #endif
