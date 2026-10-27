@@ -93,6 +93,31 @@ This is a source-only ownership handoff; the already qualified `#14`
 port remains available, and current Crypto and production CNet pins
 are not changed by adding those source files.
 
+## Crypto-owned ASN.1 BER/DER
+
+The bounded ASN.1 codec was migrated from SaltsCore into the **same**
+`Salts::Crypto` static archive. Use `<crypto/asn1.h>`,
+`<crypto/asn1_value.h>`, and `<crypto/asn1_crypto.h>` for canonical DER,
+bounded BER, owned value trees, strict ECDSA signature DER and RFC 8410
+X25519/Ed25519 SPKI/PKCS#8 structures. Its C symbols are
+`crypto_asn1_*`. There is no `Salts::ASN1` target, independent ASN.1
+DSO, `salts/asn1*.h` compatibility header, or SaltsCore dependency.
+
+The complete original ASN.1 test cases are adapted under
+`tests/asn1/` and use a tiny local test-only assertion harness, not
+TinyTest. Run them with the normal build's CTest. Test an independently
+installed C11/C++17 consumer with:
+
+```bash
+cmake -S tests/asn1/installed -B build-asn1-installed \
+  "-DCMAKE_PREFIX_PATH=$PWD/install"
+cmake --build build-asn1-installed
+ctest --test-dir build-asn1-installed --output-on-failure
+```
+
+The ASN.1 facade does not replace GmSSL's private internal ASN.1 routines
+or cause them to be compiled twice. All code remains in one native archive.
+
 ## Tests and maintenance
 
 The repository retains C11/C++17 installed consumers, SHA256/SM3/Ed448

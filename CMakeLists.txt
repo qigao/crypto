@@ -90,12 +90,17 @@ add_subdirectory(vendor/libecc)
 
 # No separate libecc archive; only its required Ed448 code is compiled.
 # SHA256 is the existing, pinned GmSSL implementation, not a duplicate libecc SHA.
+# ASN.1 BER/DER is a Crypto-owned C11 API (no separate ASN.1
+# library/target, SaltsCore dependency or duplicate GmSSL source import).
 add_library(salts_crypto STATIC
   src/crypto_tls_gmssl.c
   src/crypto_tls_cipher_bio.c
   src/crypto_ed448.c
   src/crypto_sha256.c
   src/crypto_random.c
+  src/asn1/reader.c
+  src/asn1/value.c
+  src/asn1/crypto.c
   $<TARGET_OBJECTS:crypto_libecc_ed448_objects>)
 add_library(Salts::Crypto ALIAS salts_crypto)
 set_target_properties(salts_crypto PROPERTIES
@@ -183,4 +188,5 @@ install(FILES
 if(BUILD_TESTING)
   enable_language(CXX)
   add_subdirectory(tests/algorithms)
+  add_subdirectory(tests/asn1)
 endif()
