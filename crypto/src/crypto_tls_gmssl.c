@@ -478,6 +478,27 @@ crypto_tls_result crypto_tls_session_handshake(crypto_tls_session *s)
     return status;
 }
 
+crypto_tls_result crypto_tls_session_client_authenticated_v1_3(
+    crypto_tls_session *s, uint32_t *out_authenticated)
+{
+    crypto_tls_result status;
+    if (!out_authenticated) return CRYPTO_TLS_INVALID_ARGUMENT;
+    status = lock_session(s);
+    if (status != CRYPTO_TLS_OK) return status;
+    if (!s->auth_required) {
+        status = CRYPTO_TLS_INVALID_ARGUMENT;
+    } else if (atomic_load_explicit(&s->cancelled, memory_order_acquire)) {
+        status = CRYPTO_TLS_CANCELLED;
+    } else {
+        status = completed_handshake(s);
+        if (status == CRYPTO_TLS_OK && !s->auth_verified)
+            status = CRYPTO_TLS_AUTH_REJECTED;
+        if (status == CRYPTO_TLS_OK) *out_authenticated = 1u;
+    }
+    unlock_session(s);
+    return status;
+}
+
 crypto_tls_result crypto_tls_session_send(
     crypto_tls_session *s, const uint8_t *data, size_t len, size_t *out_sent)
 {
