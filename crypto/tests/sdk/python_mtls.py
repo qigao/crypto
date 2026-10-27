@@ -36,7 +36,10 @@ ADDRESS = "127.0.0.1"
 REQUEST = b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"
 RESPONSE = b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
 CASE_NAMES = ("missing", "wrongca", "eku", "expired", "chain", "badsig")
-SERVER_REJECTIONS = ("server-wrongca", "server-wrongsan")
+# SNI selects the native server certificate BEFORE Python can check SAN.
+# Test native server SNI refusal separately from native client SAN refusal.
+PYTHON_CLIENT_REJECTIONS = ("server-wrongca", "server-wrongsni")
+NATIVE_CLIENT_REJECTIONS = ("server-wrongca", "server-wrongsan")
 PROTOCOLS = {"12": ssl.TLSVersion.TLSv1_2, "13": ssl.TLSVersion.TLSv1_3}
 MIN_TLS_RESPONSE = b"HTTP/1.0 200"
 TIMEOUT = 22.0
@@ -271,7 +274,7 @@ def python_to_native(native_server: str, f: dict[str, Path],
     # Deliberately no fixture contents in stdout/stderr logs.
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        server_negative = case in SERVER_REJECTIONS
+        server_negative = case in PYTHON_CLIENT_REJECTIONS
         client_case = "client" if server_negative else case
         context = python_tls_context(
             "client", proto, f, client_case,
@@ -279,7 +282,7 @@ def python_to_native(native_server: str, f: dict[str, Path],
         )
         success, client_reason = python_client_to_native(
             context, port, proto,
-            "invalid.example" if case == "server-wrongsan" else "localhost",
+            "invalid.example" if case == "server-wrongsni" else "localhost",
         )
         try:
             stdout, stderr = proc.communicate(timeout=TIMEOUT)
@@ -306,10 +309,16 @@ def python_to_native(native_server: str, f: dict[str, Path],
                 f"native TLS{proto} {case}: rejection was NOT in handshake: "
                 + safe_native_diagnostic(stderr),
             )
-            if server_negative:
+            if case == "server-wrongca":
                 require(
                     "SSLCertVerificationError" in client_reason,
-                    f"Python TLS{proto} did not prove server CA/SAN rejection: "
+                    f"Python TLS{proto} did not verify rejection of server CA: "
+                    + client_reason,
+                )
+            elif case == "server-wrongsni":
+                require(
+                    "SSLError:" in client_reason,
+                    f"Crypto TLS{proto} did not enforce server SNI admission: "
                     + client_reason,
                 )
         print(f"PASS Python-client/native-C11-server TLS{proto} {case}")
@@ -360,7 +369,7 @@ def native_to_python(native_client: str, f: dict[str, Path],
     )
     worker.start()
     sha = str(f["server-sha256"])
-    server_negative = case in SERVER_REJECTIONS
+    server_negative = case in NATIVE_CLIENT_REJECTIONS
     client_case = "client" if server_negative else case
     argv = [
         native_client, proto, str(port),
@@ -424,7 +433,7 @@ def run(native_server: str, native_client: str, destination: Path) -> None:
         folder.chmod(0o700)
         fixtures = make_fixtures(folder)
         for proto in PROTOCOLS:
-            for case in ("client", *CASE_NAMES, *SERVER_REJECTIONS):
+            for case in ("client", *CASE_NAMES, *PYTHON_CLIENT_REJECTIONS):
                 # One isolated native process per tested server connection.
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as port_probe:
                     port_probe.bind((ADDRESS, 0))
@@ -432,7 +441,7 @@ def run(native_server: str, native_client: str, destination: Path) -> None:
                 python_to_native(
                     native_server, fixtures, folder, proto, case, port,
                 )
-            for case in ("client", *CASE_NAMES, *SERVER_REJECTIONS):
+            for case in ("client", *CASE_NAMES, *NATIVE_CLIENT_REJECTIONS):
                 native_to_python(native_client, fixtures, proto, case)
 
 
