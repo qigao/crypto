@@ -127,6 +127,8 @@ if(CRYPTO_SDK_ENABLE_PYTHON_MTLS)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   add_executable(crypto_sdk_python_tls_server openssl-server.c)
   add_executable(crypto_sdk_python_tls_client openssl-client.c)
+  target_compile_definitions(crypto_sdk_python_tls_client PRIVATE
+    CRYPTO_TLS_PYTHON_MTLS_TRACE)
   foreach(_peer IN ITEMS crypto_sdk_python_tls_server crypto_sdk_python_tls_client)
     set_target_properties(${_peer} PROPERTIES
       C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
