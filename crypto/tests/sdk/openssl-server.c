@@ -139,6 +139,8 @@ int main(int argc, char **argv)
     int port, proto, step, done_handshake = 0, got_request = 0, phase = 0;
     int required_auth;
     uint32_t authenticated = 0u;
+    uint32_t remaining_owner_sessions = UINT32_MAX;
+    int complete_cleanup = 0;
     int64_t deadline;
     size_t bytes = 0u, i;
     int rc = 1;
@@ -268,8 +270,23 @@ done:
     }
     if (session && crypto_tls_session_destroy(&session) != CRYPTO_TLS_OK)
         rc = 1;
-    if (provider && crypto_tls_provider_destroy(&provider) != CRYPTO_TLS_OK)
-        rc = 1;
+    if (provider) {
+        if (crypto_tls_provider_session_count(
+                provider, &remaining_owner_sessions) != CRYPTO_TLS_OK
+            || remaining_owner_sessions != 0u) {
+            rc = 1;
+        } else if (crypto_tls_provider_destroy(&provider) == CRYPTO_TLS_OK
+                   && !provider) {
+            complete_cleanup = 1;
+        } else {
+            rc = 1;
+        }
+    }
+    /* Even a rejected peer must release all borrowed transports and its
+     * one static Crypto provider. Publish metadata, never credentials.
+     */
+    if (required_auth && complete_cleanup && !session)
+        fprintf(stderr, "CRYPTO_TEST_PYTHON_MTLS_CLEAN=1\n");
     close(transport.fd);
     if (rc)
         fprintf(stderr, "Crypto test-only TLS server/exporter failed (protocol=%d,phase=%d,status=%d,handshake=%d,request=%d,client_auth=%d)\n",
