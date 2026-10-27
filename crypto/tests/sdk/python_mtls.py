@@ -221,7 +221,16 @@ def safe_native_diagnostic(raw: bytes) -> str:
         r"CRYPTO_TEST_REVERSE_PHASE (handshake_complete|request_received|response_sent)|"
         r"CRYPTO_TLS_PRIVATE_(STATE|HANDSHAKE_DIAG) )"
     )
-    return " | ".join(x[:240] for x in safe if pattern.search(x))[-850:]
+    markers = []
+    for line in safe:
+        # Print only native filename/line evidence, never error_print's data,
+        # X.509 dumps, CertificateVerify, transcript, or key materials.
+        markers.extend(re.findall(
+            r"(?:tls12|tls13|tls|tls_vrf|x509_cer|x509_ext)\\.c:[0-9]{1,5}",
+            line,
+        )[:4])
+    phases = " | ".join(x[:240] for x in safe if pattern.search(x))[-850:]
+    return phases + " native_lines=" + ",".join(markers[-16:])
 
 
 def python_to_native(native_server: str, f: dict[str, Path],
