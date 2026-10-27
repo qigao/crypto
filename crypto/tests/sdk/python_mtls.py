@@ -316,8 +316,14 @@ def python_to_native(native_server: str, f: dict[str, Path],
                     + client_reason,
                 )
             elif case == "server-wrongsni":
+                # The native server already proved a terminal handshake
+                # rejection (phase=3, no client auth or HTTP). GmSSL's
+                # alert delivery is not yet equivalent on every OS:
+                # an explicit fatal TLS alert or a transport EOF is a
+                # fail-closed outcome HERE, but only the former would
+                # satisfy the separate CNet alert-ownership gate.
                 require(
-                    "SSLError:" in client_reason,
+                    client_reason.startswith(("SSLError:", "SSLEOFError:")),
                     f"Crypto TLS{proto} did not enforce server SNI admission: "
                     + client_reason,
                 )
