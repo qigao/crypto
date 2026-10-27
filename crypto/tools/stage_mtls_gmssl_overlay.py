@@ -17,7 +17,8 @@ HERE = Path(__file__).resolve()
 REPOSITORY = HERE.parents[2]
 PATCH_SOURCES = tuple(
     REPOSITORY / "vendor" / "gmssl-extensions" / "patches" / name
-    for name in ("tls12-empty-authorities.cmake",)
+    for name in ("tls12-empty-authorities.cmake",
+                 "tls13-session-ticket-bounds.cmake")
 )
 HANDSHAKE_SOURCE = (
     REPOSITORY / "vendor" / "gmssl-extensions" / "src" /
