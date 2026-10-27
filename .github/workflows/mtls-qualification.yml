@@ -6,7 +6,7 @@ on:
       - "crypto/include/crypto/tls_auth.h"
       - "crypto/src/crypto_tls_gmssl.c"
       - "crypto/tests/sdk/**"
-      - "crypto/tools/qualify_crypto_mtls_openssl.sh"
+      - "crypto/tests/sdk/python_mtls.py"
       - "crypto/tests/owner/**"
       - "crypto/tools/audit_static_crypto.py"
       - ".github/workflows/mtls-qualification.yml"
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   native-posix:
-    name: "${{ matrix.os }} static Crypto / C11 + C++17 + OpenSSL3 mTLS"
+    name: "${{ matrix.os }} static Crypto / C11 + C++17 + Python ssl mTLS"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 70
     strategy:
@@ -30,7 +30,10 @@ jobs:
             triplet: arm64-osx
     steps:
       - uses: actions/checkout@v4
-      - name: Host tools, real OpenSSL 3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Host tools and Python-only TLS test fixtures
         shell: bash
         run: |
           set -euo pipefail
@@ -38,11 +41,14 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends \
               cmake ninja-build python3 curl zip unzip tar pkg-config \
-              re2c nasm autoconf automake libtool libssl-dev
+              re2c nasm autoconf automake libtool
           else
-            brew install openssl@3 ninja pkg-config
-            echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
-            echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+            brew install ninja pkg-config
+          fi
+          python3 -m pip install --disable-pip-version-check --no-cache-dir             "cryptography==46.0.4"
+          python3 -c 'import ssl; import cryptography; assert ssl.HAS_TLSv1_3'
+          if [[ "$RUNNER_OS" == Linux || "$RUNNER_OS" == macOS ]]; then
+            true
           fi
       - name: Pinned port14 source from qigao/vcpkg-cache via curl
         shell: bash
@@ -99,7 +105,7 @@ jobs:
           python3 crypto/tools/audit_static_crypto.py \
             --prefix "$RUNNER_TEMP/crypto-sdk" \
             --report "$RUNNER_TEMP/crypto-audit.json"
-      - name: Installed C11/C++17 and independent OpenSSL3 TLS12/TLS13
+      - name: Installed C11/C++17 with external Python ssl TLS12/TLS13 mTLS
         shell: bash
         run: |
           set -euo pipefail
@@ -111,9 +117,8 @@ jobs:
           cmake -S crypto/tests/sdk -B build-sdk -G Ninja \
             "-DCMAKE_PREFIX_PATH=$prefix" \
             "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/crypto/tests/fixtures" \
-            -DCRYPTO_SDK_ENABLE_OPENSSL_PEER=ON \
-            -DCRYPTO_SDK_ENABLE_INDEPENDENT_EXPORTER=ON \
-            "-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR:-/usr}"
+            -DCRYPTO_SDK_ENABLE_PYTHON_MTLS=ON \
+            "-DPython3_EXECUTABLE=$(command -v python3)"
           cmake --build build-sdk --parallel 3
           ctest --test-dir build-sdk --output-on-failure --no-tests=error \
             --timeout 600
