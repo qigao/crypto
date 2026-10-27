@@ -41,7 +41,14 @@ static int crypto_asn1_case(const char *name)
     } \
 } while (0)
 #define CRYPTO_ASN1_TEST_SELECT(_1, _2, _3, NAME, ...) NAME
+#if defined(__cplusplus)
+/* MSVC's traditional C++ preprocessor forwards __VA_ARGS__ as one
+ * argument and incorrectly selects `unused`. The migrated C++17
+ * conformance uses only the original two-scalar-operand assertion. */
+#define check_equal(_left, _right) crypto_check_equal_scalar(_left, _right)
+#else
 #define check_equal(...) CRYPTO_ASN1_TEST_SELECT( \
     __VA_ARGS__, crypto_check_equal_bytes, crypto_check_equal_scalar, unused)( __VA_ARGS__ )
+#endif
 
 #endif
