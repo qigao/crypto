@@ -9,12 +9,17 @@ find_package(Crypto 0.1 CONFIG REQUIRED)
 target_link_libraries(application PRIVATE Salts::Crypto)
 ```
 
-GmSSL source, patches, version registration and binary packages belong
-**exclusively** to [qigao/vcpkg-cache](https://github.com/qigao/vcpkg-cache)
-(`ports/gmssl`). Crypto does not contain a `providers/gmssl/` copy, download
-upstream GmSSL independently, install a separate GmSSL library, or export
-`GmSSL::GmSSL`. It embeds the installed vcpkg static GmSSL objects into the
-single `Salts::Crypto` archive.
+The pinned **upstream GmSSL** source checkout, package assembly, ordered
+security patches and version registry belong to
+[qigao/vcpkg-cache](https://github.com/qigao/vcpkg-cache) (`ports/gmssl`).
+The six additional native C implementations and their private/public headers
+now live **only in Crypto** at `vendor/gmssl-extensions/`.
+The GmSSL vcpkg port obtains these immutable source inputs from a pinned
+Crypto commit; it builds them once into the GmSSL static archive.
+Crypto's own CMake does **not** compile those extensions again and exports
+only its existing `Salts::Crypto` archive. There is no `providers/gmssl/`
+source clone, second installed GmSSL archive, dynamic Provider or alternate
+target alias.
 
 ## Build using the installed vcpkg-cache GmSSL port
 
@@ -78,6 +83,15 @@ The generic `crypto/provider.h`, historical `salts/crypto.h`, dynamic
 Crypto Provider/Host, compatibility aliases and independently installed GmSSL
 archive are intentionally absent. Apache-2.0 GmSSL and BSD libecc licenses
 are installed with Crypto's static SDK.
+
+## GmSSL extension source provenance
+
+The follow-up vcpkg GmSSL `3.2.0#15` candidate reads the exact
+`vendor/gmssl-extensions/` source tree from this repository, without
+storing duplicate production `.c/.h` under `vcpkg-cache/ports/gmssl`.
+This is a source-only ownership handoff; the already qualified `#14`
+port remains available, and current Crypto and production CNet pins
+are not changed by adding those source files.
 
 ## Tests and maintenance
 
