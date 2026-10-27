@@ -35,7 +35,7 @@ The former `qigao/salts-net/snmp/asn1/include/asn1/x509_cert.h` and
 The reviewed 951-byte original self-issued RSA certificate DER test fixture
 is now checked in here, and Crypto exposes audited read-only metadata:
 `crypto_x509_der_common_name` (length-bounded borrowed issuer/subject CN)
-and `crypto_x509_der_public_key_kind` (RSA/EC/Ed25519 OID classification).
+and `crypto_x509_der_get_public_key_kind` (RSA/EC/Ed25519 OID classification).
 The old owned `x509_cert_t` allocation tree, `x509_cert_is_self_signed`
 (which only compared names without verifying a signature), locale-dependent
 `mktime` validity decisions, and old `SALTSNET_ASN1_C_API` are retired,

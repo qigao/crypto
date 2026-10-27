@@ -366,7 +366,7 @@ salts_asn1_status crypto_x509_der_chain_next(
 
 /* The legacy SaltsNet X509 parser recognized these OIDs. They are ordinary
  * ASN.1 AlgorithmIdentifier metadata, not evidence of public-key validity. */
-salts_asn1_status crypto_x509_der_public_key_kind(
+salts_asn1_status crypto_x509_der_get_public_key_kind(
     const crypto_x509_der_view *view,
     crypto_x509_der_public_key_kind *out) {
     static const uint8_t rsa[] = {

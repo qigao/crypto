@@ -78,7 +78,7 @@ typedef enum crypto_x509_der_public_key_kind {
     CRYPTO_X509_DER_KEY_ED25519 = 3
 } crypto_x509_der_public_key_kind;
 
-SALTS_ASN1_PUBLIC salts_asn1_status crypto_x509_der_public_key_kind(
+SALTS_ASN1_PUBLIC salts_asn1_status crypto_x509_der_get_public_key_kind(
     const crypto_x509_der_view *view,
     crypto_x509_der_public_key_kind *out);
 

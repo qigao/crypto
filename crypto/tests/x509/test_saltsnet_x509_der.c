@@ -30,7 +30,7 @@ int main(void) {
     CHECK(v.serial_number && v.serial_number_size > 0u);
     CHECK(v.spki_der && v.spki_size > 128u);
     CHECK(v.signature_algorithm_oid && v.signature_algorithm_oid_size > 0u);
-    CHECK(crypto_x509_der_public_key_kind(&v,&kind) == SALTS_ASN1_OK);
+    CHECK(crypto_x509_der_get_public_key_kind(&v,&kind) == SALTS_ASN1_OK);
     CHECK(kind == CRYPTO_X509_DER_KEY_RSA);
     CHECK(crypto_x509_der_common_name(&v,0u,&name,&size) == SALTS_ASN1_OK);
     CHECK(size == sizeof(common_name)-1u);
