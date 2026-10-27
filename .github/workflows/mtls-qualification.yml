@@ -6,6 +6,8 @@ on:
       - "crypto/include/crypto/tls_auth.h"
       - "crypto/src/crypto_tls_gmssl.c"
       - "crypto/tests/sdk/**"
+      - "crypto/tools/stage_mtls_gmssl_overlay.py"
+      - "vendor/gmssl-extensions/patches/tls12-empty-authorities.cmake"
       - "crypto/tests/sdk/python_mtls.py"
       - "crypto/tests/owner/**"
       - "crypto/tools/audit_static_crypto.py"
@@ -59,6 +61,8 @@ jobs:
           tar xzf "$RUNNER_TEMP/port14.tar.gz" \
             -C "$RUNNER_TEMP/overlay" --strip-components=1
           grep -q '"port-version": 14' "$RUNNER_TEMP/overlay/ports/gmssl/vcpkg.json"
+          python3 crypto/tools/stage_mtls_gmssl_overlay.py \
+            "$RUNNER_TEMP/overlay/ports/gmssl"
       - name: Bootstrap pinned vcpkg without NuGet or Mono
         shell: bash
         run: |
@@ -143,7 +147,10 @@ jobs:
     timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4
-      - name: Pinned vcpkg and port14, no NuGet or Mono
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned vcpkg and Crypto-owned mTLS test patch, no NuGet or Mono
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -164,6 +171,8 @@ jobs:
           $overlay = Join-Path $env:RUNNER_TEMP "overlay/vcpkg-cache-$pin/ports"
           if (-not (Select-String -Quiet -Pattern '"port-version": 14' `
                 (Join-Path $overlay 'gmssl/vcpkg.json'))) { throw 'incorrect GmSSL revision' }
+          python crypto/tools/stage_mtls_gmssl_overlay.py (Join-Path $overlay 'gmssl')
+          if ($LASTEXITCODE -ne 0) { throw 'GmSSL M5 source candidate staging failed' }
           & (Join-Path $root 'bootstrap-vcpkg.bat') -disableMetrics
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg bootstrap failed' }
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_ROOT=$root"
