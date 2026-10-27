@@ -58,7 +58,7 @@ def stage(port: Path) -> None:
         raise ValueError("missing original pinned TLS13 handshake reader")
     frozen_bytes = frozen.read_bytes()
     actual_blob = hashlib.sha1(
-        b"blob " + str(len(frozen_bytes)).encode("ascii") + b"\\0" + frozen_bytes
+        b"blob " + str(len(frozen_bytes)).encode("ascii") + b"\0" + frozen_bytes
     ).hexdigest()
     if actual_blob != PINNED_TLS13_HANDSHAKE_GIT_BLOB:
         raise ValueError("unrecognized TLS13 reader: refusal to replace patched source")
