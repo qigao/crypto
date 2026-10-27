@@ -225,6 +225,21 @@ int main(int argc,char **argv)
         goto done;
     }
     if(!success){
+        /* One rejected authenticated association is terminal. Calling
+         * handshake a second time must return the IDENTICAL error without
+         * any further borrowed socket callback or a covert retry.
+         */
+        if (python_mtls && client_identity &&
+            (status == CRYPTO_TLS_BACKEND_ERROR || status == CRYPTO_TLS_CLOSED)) {
+            unsigned short before_writes = t.writes, before_reads = t.reads;
+            if (crypto_tls_session_handshake(session) != status ||
+                before_writes != t.writes || before_reads != t.reads) {
+                fprintf(stderr,
+                    "CRYPTO_TEST_PYTHON_MTLS_TERMINAL=0\n");
+                goto done;
+            }
+            fprintf(stderr, "CRYPTO_TEST_PYTHON_MTLS_TERMINAL=1\n");
+        }
         fprintf(stderr,"valid Python TLS peer handshake failed: %d\n",(int)status);
         goto done;
     }
