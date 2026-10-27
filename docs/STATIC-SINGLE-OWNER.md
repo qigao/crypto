@@ -1,30 +1,32 @@
-# Canonical static Crypto source ownership
+# Canonical static Crypto ownership
 
-**Permanent public CMake contract:** package Crypto; target Salts::Crypto;
-exactly one installed static archive. Source-of-truth repository qigao/crypto.
-
-~~~text
-verified patched GmSSL 3.2 sources --> build-only native static objects
-src/provider_sm3.c
-src/crypto_tls_gmssl.c
-src/crypto_tls_cipher_bio.c
-src/crypto_sha256.c  --> GmSSL SHA256_CTX, not libecc SHA256
-src/crypto_ed448.c  --> private libecc WEI448 and SHAKE256
-src/crypto_random.c --> OS CSPRNG, no untrusted pseudo-random fallback
+```text
+qigao/vcpkg-cache/ports/gmssl (source, patches, versions, static package)
                 |
-          one native archive
+      installed vcpkg GmSSL archive and headers
                 |
-          Salts::Crypto
-~~~
+        qigao/crypto private build input
+          + C11 TLS/CipherBIO facade
+          + Crypto SHA256 and Ed448 adapters
+          + private libecc Ed448-only objects
+          + OS-backed CSPRNG
+                |
+      one native installed static archive
+                |
+            Salts::Crypto
+```
 
-SaltsUtils/crypto is retired in a coordinated source-removal PR. Consumers
-still call the sole native owner from Salts::Crypto; there are no duplicate
-source files compiled elsewhere, forwarding headers, or public aliases.
+The only public package target is `Salts::Crypto`. Internally,
+`GmSSL::GmSSL` is imported solely from a verified vcpkg installation.
+The installed SDK does not export a GmSSL library, split Crypto target,
+dynamic Provider/Host, compatibility alias or duplicated algorithm source.
 
-No separate module handles, GmSSL runtime archive in the installed SDK,
-CryptoTLSConfig, DLL/DSO, or Salts::TLS alias. Original GmSSL qualification
-programs remain independent reference tests and are not installed.
+`tools/verify_vcpkg_gmssl.py` checks the complete 97-file pinned port
+Git tree, source metadata and installed static package, and
+`tools/audit_static_crypto.py` checks archive/header/symbol ownership.
+Neither invokes an automatic GitHub Actions workflow. The build and
+conformance tests remain runnable locally.
 
-Do not merge SaltsUtils source-owner deletion until exact-head 3OS installed
-C11/C++17 consumers, RFC8032 Ed448 signatures, sanitizers, binary and symbol
-uniqueness gates have succeeded.
+GmSSL security fixes and their source sanitizers belong in vcpkg-cache,
+not in a revived `providers/gmssl` directory. Historical port #13
+remains available for production CNet consumers with a fixed pin.
