@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0
- * Test-only installed C11 Crypto TLS server, used as an independent
- * OpenSSL 3 s_client exporter oracle. No GmSSL/OpenSSL library is linked.
+ * Installed C11 Crypto TLS server. Python ssl is the network peer.
+ * The original exporter-only mode remains for unrelated reference tests.
+ * No OpenSSL or other peer library is linked into this static SDK client.
  */
 #define _POSIX_C_SOURCE 200809L
 #include <crypto/tls.h>
@@ -30,7 +31,7 @@ typedef struct server_transport {
 static int64_t on_write(void *user, const uint8_t *data, size_t len)
 {
     server_transport *t = (server_transport *)user;
-    size_t chunk = len; /* Diagnose independent OpenSSL peer without forced split. */
+    size_t chunk = len; /* Real native ciphertext callback. */
     ssize_t n = send(t->fd, data, chunk, 0);
     if (n >= 0) return (int64_t)n;
     if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
@@ -207,19 +208,23 @@ int main(int argc, char **argv)
     fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE handshake_complete protocol=%d auth=%d\n",
         proto, required_auth);
 
-    /* OpenSSL s_client -keymatexport uses no exporter context. The CNet
-     * context-present flag is tested separately using both native peers.
+    /* The Python ssl peer exposes no key exporter through the stdlib.
+     * In REQUIRED mTLS mode authenticate and serve HTTP only; do not
+     * manufacture or persist exporter evidence we cannot compare.
+     * The old no-client-auth reference exporter test is unchanged.
      */
-    phase = 4;
-    if (crypto_tls_session_export_v1_2(
-            session, "EXPORTER-Channel-Binding", NULL, 0u, 0u,
-            secret, sizeof(secret)) != CRYPTO_TLS_OK)
-        goto done;
-    phase = 5;
-    if (secret_hex_to_private_file(argv[5], secret, sizeof(secret)) != 0)
-        goto done;
-
-    fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE exporter_ready protocol=%d\n", proto);
+    if (!required_auth) {
+        phase = 4;
+        if (crypto_tls_session_export_v1_2(
+                session, "EXPORTER-Channel-Binding", NULL, 0u, 0u,
+                secret, sizeof(secret)) != CRYPTO_TLS_OK)
+            goto done;
+        phase = 5;
+        if (secret_hex_to_private_file(argv[5], secret, sizeof(secret)) != 0)
+            goto done;
+        fprintf(stderr, "CRYPTO_TEST_REVERSE_PHASE exporter_ready protocol=%d\n",
+            proto);
+    }
     deadline = millis() + MAX_MS;
     for (step = 0; step < MAX_STEPS && millis() < deadline; ++step) {
         bytes = 0u;
