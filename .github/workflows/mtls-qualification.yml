@@ -8,6 +8,7 @@ on:
       - "crypto/tests/sdk/**"
       - "crypto/tools/stage_mtls_gmssl_overlay.py"
       - "vendor/gmssl-extensions/patches/tls12-empty-authorities.cmake"
+      - "vendor/gmssl-extensions/patches/tls13-client-cert-ccs.cmake"
       - "crypto/tests/sdk/python_mtls.py"
       - "crypto/tests/owner/**"
       - "crypto/tools/audit_static_crypto.py"
@@ -76,7 +77,7 @@ jobs:
           test "$(git -C "$root" rev-parse HEAD)" = 04a9d8e5212d01ee1dd9478eadd9caade4f8b0d4
           "$root/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$root" >> "$GITHUB_ENV"
-      - name: Build ONLY pinned GmSSL 3.2.0#14 input
+      - name: Build pinned GmSSL #14 + Crypto-owned mTLS candidates in one static archive
         shell: bash
         env:
           TRIPLET: ${{ matrix.triplet }}
