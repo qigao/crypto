@@ -248,7 +248,7 @@ def safe_native_diagnostic(raw: bytes) -> str:
     safe = raw.decode(errors="replace").splitlines()
     pattern = re.compile(
         r"^(Crypto test-only TLS server/exporter failed |facade Python TLS |"
-        r"CRYPTO_TEST_PYTHON_MTLS_PHASE=|"
+        r"CRYPTO_TEST_PYTHON_MTLS_(?:PHASE=|TERMINAL=)|"
         r"CRYPTO_TEST_REVERSE_PHASE (handshake_complete|request_received|response_sent)|"
         r"CRYPTO_TLS_PRIVATE_(STATE|HANDSHAKE_DIAG) )"
     )
@@ -408,6 +408,7 @@ def native_to_python(native_client: str, f: dict[str, Path],
             require(
                 result.returncode != 0
                 and b"valid Python TLS peer handshake failed" in result.stderr
+                and b"CRYPTO_TEST_PYTHON_MTLS_TERMINAL=1" in result.stderr
                 and results.get("request") is not True,
                 f"native TLS{proto} ACCEPTED invalid Python server {case}: "
                 + safe_native_diagnostic(result.stderr),
