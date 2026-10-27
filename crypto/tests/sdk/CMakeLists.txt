@@ -111,21 +111,36 @@ if(CRYPTO_SDK_ENABLE_OPENSSL_PEER)
     # Pure OpenSSL3 test program: no Salts::Crypto or private GmSSL target.
     target_link_libraries(crypto_sdk_openssl_api_peer_client PRIVATE
       OpenSSL::SSL OpenSSL::Crypto)
-    # Both independent-OpenSSL peer roles exercise the installed static
-    # Crypto C11 ABI, including TLS1.2/1.3 peer-auth failure and cleanup.
-    # Never link OpenSSL into Salts::Crypto itself.
-    add_test(NAME crypto.installed.independent_openssl3_mtls
-      COMMAND bash
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/qualify_crypto_mtls_openssl.sh"
-        "$<TARGET_FILE:crypto_sdk_openssl_server>"
-        "$<TARGET_FILE:crypto_sdk_openssl_api_peer_client>"
-        "$<TARGET_FILE:crypto_sdk_openssl_client>"
-        "${CMAKE_CURRENT_BINARY_DIR}/private-mtls")
-    set_tests_properties(crypto.installed.independent_openssl3_mtls
-      PROPERTIES TIMEOUT 600 RESOURCE_LOCK crypto_mtls_peer_network)
   endif()
 endif()
 
+
+# M5 mTLS external test peer is Python stdlib ssl, NOT a linked OpenSSL
+# C application, openssl CLI or a second TLS implementation/provider.
+# The installed native C11 executables link ONLY Salts::Crypto.
+option(CRYPTO_SDK_ENABLE_PYTHON_MTLS
+  "Run Python ssl <-> installed static Crypto C11 TLS1.2/1.3 tests" OFF)
+if(CRYPTO_SDK_ENABLE_PYTHON_MTLS)
+  if(NOT UNIX)
+    message(FATAL_ERROR "Python network-peer C11 harness requires POSIX sockets")
+  endif()
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_executable(crypto_sdk_python_tls_server openssl-server.c)
+  add_executable(crypto_sdk_python_tls_client openssl-client.c)
+  foreach(_peer IN ITEMS crypto_sdk_python_tls_server crypto_sdk_python_tls_client)
+    set_target_properties(${_peer} PROPERTIES
+      C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    target_link_libraries(${_peer} PRIVATE Salts::Crypto)
+  endforeach()
+  add_test(NAME crypto.installed.python_tls_mtls
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/python_mtls.py"
+      --native-server "$<TARGET_FILE:crypto_sdk_python_tls_server>"
+      --native-client "$<TARGET_FILE:crypto_sdk_python_tls_client>"
+      --work "${CMAKE_CURRENT_BINARY_DIR}/private-python-mtls")
+  set_tests_properties(crypto.installed.python_tls_mtls
+    PROPERTIES TIMEOUT 600 RESOURCE_LOCK crypto_mtls_peer_network)
+endif()
 
 # No DSO loader in a single-static-archive Crypto package.
 option(CRYPTO_SDK_ENABLE_HOST_LEASE "Removed dynamic Crypto loader test" OFF)
