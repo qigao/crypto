@@ -85,22 +85,6 @@ jobs:
             "--overlay-ports=$RUNNER_TEMP/overlay/ports" \
             --x-install-root="$RUNNER_TEMP/gmssl-sdk"
           test -s "$RUNNER_TEMP/gmssl-sdk/$TRIPLET/lib/libgmssl.a"
-      - name: Diagnose only the fixed GmSSL TLS 1.2 source line (public source)
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          root = Path(os.environ["VCPKG_ROOT"]) / "buildtrees/gmssl/src"
-          files = [p for p in root.rglob("tls12.c") if ".clean" not in str(p)]
-          if not files:
-              raise SystemExit("exact pinned TLS12 patched source not found")
-          for p in sorted(files)[:2]:
-              lines = p.read_text().splitlines()
-              print("TLS12_PATCHED_SOURCE", p.parent.name, "lines", len(lines))
-              for n in (2244,2254,2260,2264,2268,2274):
-                  print("TLS12_SITE", n, lines[n - 1].strip())
-          PY
       - name: Build, run native CTest, install one static Crypto archive
         shell: bash
         env:
