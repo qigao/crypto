@@ -27,3 +27,17 @@ base64 or OpenSSL parsing API to production.
 Standalone source CI can compile `crypto/src/crypto_x509_der.c` with
 `Salts::ASN1` while leaving GmSSL unavailable; the full static Crypto SDK
 and TLS peer interoperability must still be accepted separately.
+
+## Removed SaltsNet ASN.1-side X.509 API
+
+The former `qigao/salts-net/snmp/asn1/include/asn1/x509_cert.h` and
+`src/x509_cert.c` were NOT retained as duplicate ASN.1/X.509 implementations.
+The reviewed 951-byte original self-issued RSA certificate DER test fixture
+is now checked in here, and Crypto exposes audited read-only metadata:
+`crypto_x509_der_common_name` (length-bounded borrowed issuer/subject CN)
+and `crypto_x509_der_public_key_kind` (RSA/EC/Ed25519 OID classification).
+The old owned `x509_cert_t` allocation tree, `x509_cert_is_self_signed`
+(which only compared names without verifying a signature), locale-dependent
+`mktime` validity decisions, and old `SALTSNET_ASN1_C_API` are retired,
+not emulated. This is an intentional clean API break, not a compatibility
+wrapper. TLS authentication and certificate trust remain solely GmSSL-owned.

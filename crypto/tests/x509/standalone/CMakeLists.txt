@@ -46,3 +46,24 @@ endif()
 add_test(NAME crypto.x509.source_real_certificates
   COMMAND crypto_x509_der_source_test)
 set_tests_properties(crypto.x509.source_real_certificates PROPERTIES TIMEOUT 120)
+
+# Original SaltsNet ASN.1-side X.509 cert metadata regression fixture,
+# now qualified against the one Crypto owner instead of a second library.
+add_executable(crypto_x509_moved_saltsnet_fixture_test
+  "${CRYPTO_X509_SOURCE_ROOT}/tests/x509/test_saltsnet_x509_der.c"
+  $<TARGET_OBJECTS:crypto_x509_source_objects>)
+target_include_directories(crypto_x509_moved_saltsnet_fixture_test PRIVATE
+  "${CRYPTO_X509_SOURCE_ROOT}/include"
+  "${CRYPTO_X509_SOURCE_ROOT}/tests/x509")
+target_compile_features(crypto_x509_moved_saltsnet_fixture_test PRIVATE c_std_11)
+target_link_libraries(crypto_x509_moved_saltsnet_fixture_test PRIVATE Salts::ASN1)
+set_target_properties(crypto_x509_moved_saltsnet_fixture_test PROPERTIES
+  C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(crypto_x509_moved_saltsnet_fixture_test PRIVATE
+    -Wall -Wextra -Wpedantic -Werror)
+elseif(MSVC)
+  target_compile_options(crypto_x509_moved_saltsnet_fixture_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME crypto.x509.migrated_saltsnet_fixture
+         COMMAND crypto_x509_moved_saltsnet_fixture_test)

@@ -11,3 +11,11 @@ target_link_libraries(crypto_x509_der_conformance PRIVATE Salts::Crypto)
 add_test(NAME crypto.x509.real_der_and_negative
   COMMAND crypto_x509_der_conformance)
 set_tests_properties(crypto.x509.real_der_and_negative PROPERTIES TIMEOUT 120)
+
+# Retain the exact historical SaltsNet 951-byte X.509 DER regression,
+# but execute it only against the Crypto-owned strict inspector.
+add_executable(crypto_x509_moved_saltsnet_fixture test_saltsnet_x509_der.c)
+target_compile_features(crypto_x509_moved_saltsnet_fixture PRIVATE c_std_11)
+target_link_libraries(crypto_x509_moved_saltsnet_fixture PRIVATE Salts::Crypto)
+add_test(NAME crypto.x509.migrated_saltsnet_fixture
+         COMMAND crypto_x509_moved_saltsnet_fixture)

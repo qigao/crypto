@@ -362,3 +362,101 @@ salts_asn1_status crypto_x509_der_chain_next(
     *offset = position + certificate.encoded_size;
     return SALTS_ASN1_OK;
 }
+
+
+/* The legacy SaltsNet X509 parser recognized these OIDs. They are ordinary
+ * ASN.1 AlgorithmIdentifier metadata, not evidence of public-key validity. */
+salts_asn1_status crypto_x509_der_public_key_kind(
+    const crypto_x509_der_view *view,
+    crypto_x509_der_public_key_kind *out) {
+    static const uint8_t rsa[] = {
+        0x2au,0x86u,0x48u,0x86u,0xf7u,0x0du,0x01u,0x01u,0x01u
+    };
+    static const uint8_t ec[] = {0x2au,0x86u,0x48u,0xceu,0x3du,0x02u,0x01u};
+    static const uint8_t ed25519[] = {0x2bu,0x65u,0x70u};
+    crypto_x509_der_public_key_kind kind = CRYPTO_X509_DER_KEY_UNKNOWN;
+    const uint8_t *oid;
+    size_t length;
+    if (!view || !out || !view->public_key_algorithm_oid ||
+        view->public_key_algorithm_oid_size == 0u)
+        return SALTS_ASN1_INVALID_ARGUMENT;
+    oid = view->public_key_algorithm_oid;
+    length = view->public_key_algorithm_oid_size;
+    if (length == sizeof(rsa) && memcmp(oid,rsa,sizeof(rsa)) == 0)
+        kind = CRYPTO_X509_DER_KEY_RSA;
+    else if (length == sizeof(ec) && memcmp(oid,ec,sizeof(ec)) == 0)
+        kind = CRYPTO_X509_DER_KEY_EC;
+    else if (length == sizeof(ed25519) &&
+             memcmp(oid,ed25519,sizeof(ed25519)) == 0)
+        kind = CRYPTO_X509_DER_KEY_ED25519;
+    *out = kind;
+    return SALTS_ASN1_OK;
+}
+
+salts_asn1_status crypto_x509_der_common_name(
+    const crypto_x509_der_view *view, uint8_t issuer,
+    const uint8_t **out_data, size_t *out_size) {
+    static const uint8_t cn_oid[] = {0x55u,0x04u,0x03u};
+    const uint8_t *name;
+    size_t name_size;
+    const uint8_t *found = NULL;
+    size_t found_size = 0u;
+    salts_asn1_reader root_reader, rdns, attributes, fields;
+    salts_asn1_tlv root, rdn, attribute, oid, value;
+    salts_asn1_status s;
+    if (!view || !out_data || !out_size || issuer > 1u)
+        return SALTS_ASN1_INVALID_ARGUMENT;
+    name = issuer ? view->issuer_der : view->subject_der;
+    name_size = issuer ? view->issuer_size : view->subject_size;
+    if (!name || name_size == 0u ||
+        name_size > CRYPTO_X509_DER_MAX_CERT_BYTES)
+        return SALTS_ASN1_INVALID_ARGUMENT;
+    s = salts_asn1_reader_init(&root_reader, name, name_size, SALTS_ASN1_DER);
+    if (s != SALTS_ASN1_OK) return s;
+    s = required(&root_reader, &root);
+    if (s != SALTS_ASN1_OK) return s;
+    if (!tag_is(&root,0u,1u,16u) || root.encoded_size != name_size)
+        return SALTS_ASN1_MALFORMED;
+    s = salts_asn1_reader_open_children(&root_reader,&root,&rdns);
+    if (s != SALTS_ASN1_OK) return s;
+    for (;;) {
+        s = salts_asn1_reader_next(&rdns,&rdn);
+        if (s == SALTS_ASN1_DONE) break;
+        if (s != SALTS_ASN1_OK) return s;
+        if (!tag_is(&rdn,0u,1u,17u)) return SALTS_ASN1_MALFORMED;
+        s = salts_asn1_reader_open_children(&rdns,&rdn,&attributes);
+        if (s != SALTS_ASN1_OK) return s;
+        if (attributes.size == 0u) return SALTS_ASN1_MALFORMED;
+        for (;;) {
+            s = salts_asn1_reader_next(&attributes,&attribute);
+            if (s == SALTS_ASN1_DONE) break;
+            if (s != SALTS_ASN1_OK) return s;
+            if (!tag_is(&attribute,0u,1u,16u))
+                return SALTS_ASN1_MALFORMED;
+            s = salts_asn1_reader_open_children(
+                &attributes,&attribute,&fields);
+            if (s != SALTS_ASN1_OK) return s;
+            s = required(&fields,&oid);
+            if (s != SALTS_ASN1_OK) return s;
+            if (!tag_is(&oid,0u,0u,6u)) return SALTS_ASN1_MALFORMED;
+            s = required(&fields,&value);
+            if (s != SALTS_ASN1_OK) return s;
+            s = end_of(&fields);
+            if (s != SALTS_ASN1_OK) return s;
+            if (oid.content_size == sizeof(cn_oid) &&
+                memcmp(oid.content,cn_oid,sizeof(cn_oid)) == 0) {
+                if (found || value.tag_class != 0u || value.constructed ||
+                    !(value.tag_number == 12u || value.tag_number == 19u ||
+                      value.tag_number == 22u) ||
+                    !value.content_size)
+                    return SALTS_ASN1_MALFORMED;
+                found = value.content;
+                found_size = value.content_size;
+            }
+        }
+    }
+    if (!found) return SALTS_ASN1_DONE;
+    *out_data = found;
+    *out_size = found_size;
+    return SALTS_ASN1_OK;
+}
