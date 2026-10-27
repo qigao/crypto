@@ -14,21 +14,21 @@ spec("Crypto ASN.1 cryptographic structures") {
         size_t decoded_r_size = 0u, decoded_s_size = 0u, written = 0u;
         check_equal(crypto_asn1_ecdsa_signature_encode(
                         r, sizeof(r), s, sizeof(s), NULL, 0u, &written),
-                    CRYPTO_ASN1_OK);
+                    SALTS_ASN1_OK);
         check_equal(written, (size_t)CRYPTO_ASN1_ECDSA_SIGNATURE_MAX_BYTES);
         memset(sentinel, 0xa5, sizeof(sentinel));
         check_equal(crypto_asn1_ecdsa_signature_encode(
                         r, sizeof(r), s, sizeof(s), sentinel, sizeof(sentinel),
                         &written),
-                    CRYPTO_ASN1_BUFFER_TOO_SMALL);
+                    SALTS_ASN1_BUFFER_TOO_SMALL);
         check_equal(sentinel[0], 0xa5u);
         check_equal(crypto_asn1_ecdsa_signature_encode(
                         r, sizeof(r), s, sizeof(s), der, sizeof(der), &written),
-                    CRYPTO_ASN1_OK);
+                    SALTS_ASN1_OK);
         check_equal(crypto_asn1_ecdsa_signature_decode(
                         der, written, &decoded_r, &decoded_r_size,
                         &decoded_s, &decoded_s_size),
-                    CRYPTO_ASN1_OK);
+                    SALTS_ASN1_OK);
         check_equal(decoded_r_size, sizeof(r));
         check_equal(decoded_s_size, sizeof(s));
         check_equal(decoded_r, r, sizeof(r));
@@ -43,11 +43,11 @@ spec("Crypto ASN.1 cryptographic structures") {
         size_t r_size = 0u, s_size = 0u, written = 0u;
         check_equal(crypto_asn1_ecdsa_signature_decode(
                         negative, sizeof(negative), &r, &r_size, &s, &s_size),
-                    CRYPTO_ASN1_MALFORMED);
+                    SALTS_ASN1_MALFORMED);
         check_equal(crypto_asn1_ecdsa_signature_encode(
                         too_wide, sizeof(too_wide), too_wide, 1u,
                         NULL, 0u, &written),
-                    CRYPTO_ASN1_LIMIT_EXCEEDED);
+                    SALTS_ASN1_LIMIT_EXCEEDED);
     }
 
     it("round trips RFC 8410 SPKI and PKCS8 without parameters") {
@@ -62,11 +62,11 @@ spec("Crypto ASN.1 cryptographic structures") {
         check_equal(crypto_asn1_rfc8410_spki_encode(
                         CRYPTO_ASN1_RFC8410_ED25519, key, spki, sizeof(spki),
                         &written),
-                    CRYPTO_ASN1_OK);
+                    SALTS_ASN1_OK);
         check_equal(written, sizeof(spki));
         check_equal(crypto_asn1_rfc8410_spki_decode(
                         spki, sizeof(spki), &algorithm, &decoded, &decoded_size),
-                    CRYPTO_ASN1_OK);
+                    SALTS_ASN1_OK);
         check_equal(algorithm, CRYPTO_ASN1_RFC8410_ED25519);
         check_equal(decoded_size, sizeof(key));
         check_equal(decoded, key, sizeof(key));
@@ -74,11 +74,11 @@ spec("Crypto ASN.1 cryptographic structures") {
         check_equal(crypto_asn1_rfc8410_pkcs8_encode(
                         CRYPTO_ASN1_RFC8410_X25519, key, pkcs8, sizeof(pkcs8),
                         &written),
-                    CRYPTO_ASN1_OK);
+                    SALTS_ASN1_OK);
         check_equal(written, sizeof(pkcs8));
         check_equal(crypto_asn1_rfc8410_pkcs8_decode(
                         pkcs8, sizeof(pkcs8), &algorithm, &decoded, &decoded_size),
-                    CRYPTO_ASN1_OK);
+                    SALTS_ASN1_OK);
         check_equal(algorithm, CRYPTO_ASN1_RFC8410_X25519);
         check_equal(decoded_size, sizeof(key));
         check_equal(decoded, key, sizeof(key));
@@ -94,6 +94,6 @@ spec("Crypto ASN.1 cryptographic structures") {
         size_t key_size = 0u;
         check_equal(crypto_asn1_rfc8410_spki_decode(
                         spki, sizeof(spki), &algorithm, &key, &key_size),
-                    CRYPTO_ASN1_MALFORMED);
+                    SALTS_ASN1_MALFORMED);
     }
 }

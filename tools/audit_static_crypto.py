@@ -21,11 +21,8 @@ MANDATORY = (
     "salts_crypto_random_bytes",
     "salts_crypto_libecc_get_random",
     "sha256_init", "sha256_update", "sha256_finish",
-    # BER/DER is part of this same archive, never a split Salts::ASN1.
-    "crypto_asn1_reader_init", "crypto_asn1_reader_next",
-    "crypto_asn1_validate", "crypto_asn1_encode_tlv",
-    "crypto_asn1_value_create", "crypto_asn1_value_encode",
-    "crypto_asn1_value_decode", "crypto_asn1_ecdsa_signature_encode",
+    # Generic BER/DER belongs exclusively to independently installed Salts::ASN1.
+    "crypto_asn1_ecdsa_signature_encode",
     "crypto_asn1_ecdsa_signature_decode", "crypto_asn1_rfc8410_spki_encode",
     "crypto_asn1_rfc8410_pkcs8_encode",
 )
@@ -53,8 +50,7 @@ def inspect(prefix: Path) -> dict:
     # The installed SDK only publishes crypto/* headers; no compatibility
     # include/salts/crypto.h may be installed.
     headers = prefix / "include" / "crypto"
-    for name in ("status.h", "sha256.h", "ed448.h",
-                 "asn1.h", "asn1_value.h", "asn1_crypto.h"):
+    for name in ("status.h", "sha256.h", "ed448.h", "asn1_crypto.h"):
         if not (headers / name).is_file():
             raise ValueError("missing canonical installed Crypto header: " + name)
     if (prefix / "include" / "salts" / "crypto.h").exists():
@@ -75,8 +71,10 @@ def inspect(prefix: Path) -> dict:
     if re.search(r"\b(?:Salts::TLS|Salts::TLSHost|Salts::TLSCipherBIO|"
                  r"Salts::CryptoProvider|Crypto::|SaltsCrypto::)\w*", value):
         raise ValueError("split or alternate Crypto target in installed export")
-    if "Salts::ASN1" in value or "Crypto::ASN1" in value:
-        raise ValueError("split ASN.1 library/target in installed Crypto package")
+    if "Salts::ASN1" not in value:
+        raise ValueError("Crypto package must link its separate Salts::ASN1 owner")
+    if "Crypto::ASN1" in value:
+        raise ValueError("forbidden alternate ASN.1 library")
     if "GmSSL::" in value or "PrivateGmSSL" in value:
         raise ValueError("installed static archive still links a private GmSSL target")
     report = {
@@ -110,7 +108,9 @@ def inspect(prefix: Path) -> dict:
         raise ValueError("mandatory Crypto symbol has nonunique definition: " +
                          str({s: symbols[s] for s in absent}))
     forbidden = [s for s in FORBIDDEN if symbols[s]]
-    forbidden.extend(s for s in symbols if s.startswith("salts_asn1_"))
+    forbidden.extend(s for s in symbols if s.startswith("salts_asn1_")
+                     or s.startswith(("crypto_asn1_reader_", "crypto_asn1_value_"))
+                     or s in ("crypto_asn1_validate", "crypto_asn1_encode_tlv"))
     if forbidden:
         raise ValueError("obsolete or unsafe RNG symbol still present: " + str(forbidden))
     report["symbols_checked"] = True

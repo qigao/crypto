@@ -82,6 +82,10 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CTest)
 find_package(Threads REQUIRED)
+find_package(ASN1 0.1 CONFIG REQUIRED)
+if(NOT TARGET Salts::ASN1)
+  message(FATAL_ERROR "Crypto requires standalone provider-neutral Salts::ASN1")
+endif()
 
 set(_libecc "${CMAKE_CURRENT_SOURCE_DIR}/vendor/libecc")
 # Compile libecc's reviewed Ed448 subset in its own internal OBJECT target.
@@ -90,16 +94,14 @@ add_subdirectory(vendor/libecc)
 
 # No separate libecc archive; only its required Ed448 code is compiled.
 # SHA256 is the existing, pinned GmSSL implementation, not a duplicate libecc SHA.
-# ASN.1 BER/DER is a Crypto-owned C11 API (no separate ASN.1
-# library/target, SaltsCore dependency or duplicate GmSSL source import).
+# Generic ASN.1 BER/DER now comes solely from imported Salts::ASN1.
+# Crypto retains only ECDSA DER and RFC 8410 key-format functions.
 add_library(salts_crypto STATIC
   src/crypto_tls_gmssl.c
   src/crypto_tls_cipher_bio.c
   src/crypto_ed448.c
   src/crypto_sha256.c
   src/crypto_random.c
-  src/asn1/reader.c
-  src/asn1/value.c
   src/asn1/crypto.c
   $<TARGET_OBJECTS:crypto_libecc_ed448_objects>)
 add_library(Salts::Crypto ALIAS salts_crypto)
@@ -108,7 +110,7 @@ set_target_properties(salts_crypto PROPERTIES
   C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
   POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 target_compile_features(salts_crypto PUBLIC c_std_11)
-target_link_libraries(salts_crypto PUBLIC Threads::Threads)
+target_link_libraries(salts_crypto PUBLIC Threads::Threads Salts::ASN1)
 target_include_directories(salts_crypto
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>

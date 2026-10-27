@@ -2,7 +2,8 @@
 
 This repository owns the Crypto C11 facade, SHA256/Ed448 adapters, bounded TLS
 CipherBIO and private libecc Ed448 arithmetic. It installs **one** native static
-archive and exactly one CMake target:
+archive and exactly one **Crypto** CMake target (plus the separately imported
+`Salts::ASN1` native codec target):
 
 ```cmake
 find_package(Crypto 0.1 CONFIG REQUIRED)
@@ -56,7 +57,8 @@ python3 tools/verify_vcpkg_gmssl.py \
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=ON \
-  "-DCRYPTO_GMSSL_ROOT=$PWD/vcpkg_installed/x64-linux"
+  "-DCRYPTO_GMSSL_ROOT=$PWD/vcpkg_installed/x64-linux" \
+  "-DCMAKE_PREFIX_PATH=$PWD/../asn1/install"
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 cmake --install build --prefix "$PWD/install"
@@ -93,30 +95,26 @@ This is a source-only ownership handoff; the already qualified `#14`
 port remains available, and current Crypto and production CNet pins
 are not changed by adding those source files.
 
-## Crypto-owned ASN.1 BER/DER
+## Independent ASN.1, Crypto-specific key formats
 
-The bounded ASN.1 codec was migrated from SaltsCore into the **same**
-`Salts::Crypto` static archive. Use `<crypto/asn1.h>`,
-`<crypto/asn1_value.h>`, and `<crypto/asn1_crypto.h>` for canonical DER,
-bounded BER, owned value trees, strict ECDSA signature DER and RFC 8410
-X25519/Ed25519 SPKI/PKCS#8 structures. Its C symbols are
-`crypto_asn1_*`. There is no `Salts::ASN1` target, independent ASN.1
-DSO, `salts/asn1*.h` compatibility header, or SaltsCore dependency.
+The generic BER/DER Reader, Validator, Encoder, OID and Owned Value Tree
+belong solely to **standalone static `Salts::ASN1`**, not Crypto.
+Install the independently qualified ASN1 0.1 CMake package first and make it
+visible via `CMAKE_PREFIX_PATH`. The sole Crypto archive imports
+`Salts::ASN1` and does **not** compile the generic parser or value tree again.
+ASN1 owns `<salts/asn1.h>`, `<salts/asn1_value.h>` and `salts_asn1_*`.
 
-The complete original ASN.1 test cases are adapted under
-`tests/asn1/` and use a tiny local test-only assertion harness, not
-TinyTest. Run them with the normal build's CTest. Test an independently
-installed C11/C++17 consumer with:
+Crypto still owns `<crypto/asn1_crypto.h>` and the `crypto_asn1_ecdsa_*`
+and `crypto_asn1_rfc8410_*` X9.62/RFC 8410 key-format profiles.
+Those functions return the canonical `salts_asn1_status` codes; no
+legacy `crypto_asn1_reader_*` or `crypto_asn1_value_*` forwards remain.
+Private GmSSL ASN.1 internals remain confined to its existing static objects.
 
-```bash
-cmake -S tests/asn1/installed -B build-asn1-installed \
-  "-DCMAKE_PREFIX_PATH=$PWD/install"
-cmake --build build-asn1-installed
-ctest --test-dir build-asn1-installed --output-on-failure
-```
-
-The ASN.1 facade does not replace GmSSL's private internal ASN.1 routines
-or cause them to be compiled twice. All code remains in one native archive.
+For independent installed Crypto C11/C++17 consumers, put both the
+Crypto and ASN1 installation prefixes in `CMAKE_PREFIX_PATH`.
+No SaltsCore, CMeta, fallback provider or additional Crypto static archive
+is introduced. This is an intentional source/ABI change, not a compatible
+update to previously published Crypto headers.
 
 ## Tests and maintenance
 
