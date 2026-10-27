@@ -45,6 +45,7 @@ int main(void)
     crypto_tls_result result;
     uint32_t count = UINT32_MAX;
     char too_long[CRYPTO_TLS_AUTH_MAX_PATH_BYTES + 2u];
+    char bad_hostname[257];
     const size_t original_v1_size = sizeof(crypto_tls_session_options);
 
     CHECK(crypto_tls_auth_abi_version() == CRYPTO_TLS_AUTH_ABI_VERSION);
@@ -113,6 +114,15 @@ int main(void)
     options.ca_file = SDK_CA_FILE;
     auth.client_auth = CRYPTO_TLS_CLIENT_AUTH_NONE;
     auth.client_ca_file = NULL;
+
+    /* Exact 256 non-NUL bytes must fail BEFORE the legacy strlen validator.
+     * This test must also remain valid under source ASan/UBSan.
+     */
+    memset(bad_hostname, 'H', sizeof(bad_hostname));
+    bad_hostname[256] = '\0';
+    options.hostname = bad_hostname;
+    EXPECT_BAD();
+    options.hostname = "localhost";
 
     auth.client_certificate_file = SDK_SERVER_CERT_FILE; EXPECT_BAD();
     auth.client_certificate_file = NULL;
