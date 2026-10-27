@@ -118,6 +118,19 @@ static int save_test_key(const char *path, const uint8_t secret[32])
     return rc;
 }
 
+static void trace_python_mtls_phase(const char *stage, int active)
+{
+#ifdef CRYPTO_TLS_PYTHON_MTLS_TRACE
+    if (active) {
+        fprintf(stderr, "CRYPTO_TEST_PYTHON_MTLS_PHASE=%s\n", stage);
+        fflush(stderr);
+    }
+#else
+    (void)stage;
+    (void)active;
+#endif
+}
+
 int main(int argc,char **argv)
 {
     crypto_tls_provider *provider=NULL;
@@ -140,6 +153,7 @@ int main(int argc,char **argv)
     int port,protocol,want_success,success=0,step,rc=1;
     int client_identity;
     int python_mtls;
+    int receive_phase_logged = 0;
     int64_t deadline;
     static const uint8_t request[]="GET / HTTP/1.0\r\nHost: localhost\r\n\r\n";
     uint8_t response[8192];
@@ -193,6 +207,7 @@ int main(int argc,char **argv)
        || crypto_tls_extension_abi_version()!=CRYPTO_TLS_EXTENSION_ABI_VERSION
        || crypto_tls_session_set_alpn_v1_1(session,alpn_names,2)!=CRYPTO_TLS_OK)
         goto done;
+    trace_python_mtls_phase("created", python_mtls);
     deadline=monotonic_ms()+MAX_RUN_MS;
     for(step=0;step<20000 && monotonic_ms()<deadline;step++){
         status=crypto_tls_session_handshake(session);
@@ -213,6 +228,7 @@ int main(int argc,char **argv)
         fprintf(stderr,"valid Python TLS peer handshake failed: %d\n",(int)status);
         goto done;
     }
+    trace_python_mtls_phase("handshake-complete", python_mtls);
 
     memset(&info,0,sizeof(info));
     info.struct_size=sizeof(info);
@@ -224,6 +240,7 @@ int main(int argc,char **argv)
         goto done;
     }
 
+    trace_python_mtls_phase("server-info", python_mtls);
     if (crypto_tls_peer_abi_version() != CRYPTO_TLS_PEER_ABI_VERSION
         || crypto_tls_session_peer_sha256_v1_2(session,sha) != CRYPTO_TLS_OK)
         goto done;
@@ -253,6 +270,7 @@ int main(int argc,char **argv)
     if (!der_len || der_len > chain_len ||
         memcmp(chain,der,der_len) != 0)
         goto done;
+    trace_python_mtls_phase("peer-verified", python_mtls);
     /* Python stdlib ssl has no keying-material exporter interface.
      * Do not assert exporter parity or publish derived bytes in this
      * mTLS test. A different qualified gate tests exporter key parity.
@@ -271,6 +289,7 @@ int main(int argc,char **argv)
             goto done;
     }
 
+    trace_python_mtls_phase("application-data", python_mtls);
     deadline=monotonic_ms()+MAX_RUN_MS;
     while(monotonic_ms()<deadline){
         if(sending){
@@ -278,17 +297,25 @@ int main(int argc,char **argv)
             if(status==CRYPTO_TLS_OK){
                 if(sent!=sizeof(request)-1)goto done;
                 sending=0;
+                trace_python_mtls_phase("request-sent", python_mtls);
             }else if(status!=CRYPTO_TLS_AGAIN)goto done;
         }
         if(!sending && total<sizeof(response)-1){
             size_t n=0;
+            if (!receive_phase_logged) {
+                trace_python_mtls_phase("receive-start", python_mtls);
+                receive_phase_logged = 1;
+            }
             status=crypto_tls_session_receive(session,
                 response+total,sizeof(response)-1-total,&n);
             if(status==CRYPTO_TLS_OK){
                 if(!n||n>sizeof(response)-1-total)goto done;
                 total+=n;
                 response[total]=0;
-                if(strstr((char *)response,"HTTP/1.0 200")){rc=0;break;}
+                if(strstr((char *)response,"HTTP/1.0 200")){
+                    trace_python_mtls_phase("http-complete", python_mtls);
+                    rc=0;break;
+                }
             }else if(status!=CRYPTO_TLS_AGAIN)goto done;
         }
         short_pause();
@@ -309,8 +336,11 @@ done:
     if(leaf) (void)fclose(leaf);
     /* Never print or upload exporter keying material or session secrets. */
     memset(keymat,0,sizeof(keymat));
+    trace_python_mtls_phase("destroy-start", python_mtls);
     if(session && crypto_tls_session_destroy(&session)!=CRYPTO_TLS_OK)rc=1;
+    trace_python_mtls_phase("session-destroyed", python_mtls);
     if(provider && crypto_tls_provider_destroy(&provider)!=CRYPTO_TLS_OK)rc=1;
+    trace_python_mtls_phase("provider-destroyed", python_mtls);
     if(t.fd>=0)close(t.fd);
     if(rc)fprintf(stderr,"facade Python TLS %d %s failed handshake=%d status=%d records=%zu writes=%u reads=%u\n",
         protocol,argv[5],success,(int)status,total,t.writes,t.reads);
