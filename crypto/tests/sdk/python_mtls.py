@@ -188,7 +188,7 @@ def python_tls_context(role: str, proto: str, f: dict[str, Path],
 
 
 def python_client_to_native(ctx: ssl.SSLContext, port: int, proto: str,
-                            hostname: str) -> bool:
+                            hostname: str) -> tuple[bool, str]:
     end = time.monotonic() + 9.0
     while True:
         try:
@@ -206,9 +206,11 @@ def python_client_to_native(ctx: ssl.SSLContext, port: int, proto: str,
                 peer.settimeout(5.0)
                 peer.sendall(REQUEST)
                 data = peer.recv(2048)
-                return MIN_TLS_RESPONSE in data
-        except (ssl.SSLError, OSError, TimeoutError):
-            return False
+                return MIN_TLS_RESPONSE in data, "authenticated-HTTP"
+        except (ssl.SSLError, OSError, TimeoutError) as exc:
+            return False, (
+                type(exc).__name__ + ":" + str(getattr(exc, "reason", "transport"))
+            )
 
 
 def safe_native_diagnostic(raw: bytes) -> str:
@@ -216,7 +218,8 @@ def safe_native_diagnostic(raw: bytes) -> str:
     safe = raw.decode(errors="replace").splitlines()
     pattern = re.compile(
         r"^(Crypto test-only TLS server/exporter failed |"
-        r"CRYPTO_TEST_REVERSE_PHASE (handshake_complete|request_received|response_sent))"
+        r"CRYPTO_TEST_REVERSE_PHASE (handshake_complete|request_received|response_sent)|"
+        r"CRYPTO_TLS_PRIVATE_(STATE|HANDSHAKE_DIAG) )"
     )
     return " | ".join(x[:240] for x in safe if pattern.search(x))[-850:]
 
@@ -232,7 +235,7 @@ def python_to_native(native_server: str, f: dict[str, Path],
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         context = python_tls_context("client", proto, f, case)
-        success = python_client_to_native(context, port, proto, "localhost")
+        success, client_reason = python_client_to_native(context, port, proto, "localhost")
         try:
             stdout, stderr = proc.communicate(timeout=TIMEOUT)
         except subprocess.TimeoutExpired as exc:
@@ -243,7 +246,7 @@ def python_to_native(native_server: str, f: dict[str, Path],
         if case == "client":
             require(success and proc.returncode == 0,
                     f"native server TLS{proto} rejected valid Python client: "
-                    + safe_native_diagnostic(stderr))
+                    + client_reason + " | " + safe_native_diagnostic(stderr))
             require(
                 b"handshake_complete protocol=" in stderr
                 and b"auth=1" in stderr,
