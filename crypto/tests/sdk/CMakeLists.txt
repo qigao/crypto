@@ -40,6 +40,17 @@ target_compile_definitions(crypto_sdk_consumer PRIVATE
   "SDK_SERVER_CERT_FILE=\"${_cert}\""
   "SDK_SERVER_KEY_FILE=\"${_key}\"")
 add_test(NAME crypto.installed.real_tls12_tls13 COMMAND crypto_sdk_consumer)
+add_executable(crypto_sdk_auth_contract auth-contract.c)
+set_target_properties(crypto_sdk_auth_contract PROPERTIES
+  C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+target_link_libraries(crypto_sdk_auth_contract PRIVATE Salts::Crypto)
+target_compile_definitions(crypto_sdk_auth_contract PRIVATE
+  "SDK_CA_FILE=\"${_ca}\""
+  "SDK_SERVER_CERT_FILE=\"${_cert}\""
+  "SDK_SERVER_KEY_FILE=\"${_key}\"")
+add_test(NAME crypto.installed.mtls_auth_contract
+  COMMAND crypto_sdk_auth_contract)
+set_tests_properties(crypto.installed.mtls_auth_contract PROPERTIES TIMEOUT 40)
 set_tests_properties(crypto.installed.real_tls12_tls13 PROPERTIES TIMEOUT 90)
 option(CRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE
   "Build real borrowed-callback race test (Unix native only)" OFF)
