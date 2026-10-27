@@ -240,6 +240,15 @@ static int valid_auth_options(
     const crypto_tls_session_options *o,
     const crypto_tls_auth_options_v1_3 *a)
 {
+    /* The legacy v1.0 validator uses strlen(hostname). The additive
+     * bounded v1.3 entry MUST check the client hostname before entering
+     * that validator; otherwise a nonterminated hostname could trigger an
+     * unbounded scan, contradicting the new API's 255-byte admission.
+     */
+    if (!o || o->struct_size != sizeof(*o)
+        || (o->role == CRYPTO_TLS_CLIENT &&
+            !bounded_text(o->hostname, 255u, 0)))
+        return 0;
     if (!valid_options(o) || !a || a->struct_size != sizeof(*a)
         || a->reserved_flags || a->reserved
         || (a->client_auth != CRYPTO_TLS_CLIENT_AUTH_NONE
