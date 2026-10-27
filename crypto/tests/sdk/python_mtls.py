@@ -227,6 +227,7 @@ def safe_native_diagnostic(raw: bytes) -> str:
     safe = raw.decode(errors="replace").splitlines()
     pattern = re.compile(
         r"^(Crypto test-only TLS server/exporter failed |facade Python TLS |"
+        r"CRYPTO_TEST_PYTHON_MTLS_PHASE=|"
         r"CRYPTO_TEST_REVERSE_PHASE (handshake_complete|request_received|response_sent)|"
         r"CRYPTO_TLS_PRIVATE_(STATE|HANDSHAKE_DIAG) )"
     )
