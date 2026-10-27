@@ -29,3 +29,17 @@ embedded within its pinned static archive; no GmSSL source/header is copied
 or recompiled here. A later explicit review may consolidate low-level
 implementations if behavior and DER strictness match; this migration alone
 does not substitute GmSSL's internal certificate parser.
+
+## Source-only qualification without GmSSL
+
+The exact same four C/C++17 test bodies can also be compiled directly
+with the three Crypto-owned C11 ASN.1 source files as **test executables**,
+without installing GmSSL or introducing a second packaged native library:
+
+```sh
+cmake -S tests/asn1/standalone -B build-asn1-source -G Ninja
+cmake --build build-asn1-source
+ctest --test-dir build-asn1-source --output-on-failure
+```
+
+This target is strictly test-only and is never installed or exported.
