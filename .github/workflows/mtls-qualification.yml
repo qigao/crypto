@@ -146,6 +146,9 @@ jobs:
             "-DCMAKE_PREFIX_PATH=$prefix" \
             "-DCRYPTO_TEST_FIXTURES=$GITHUB_WORKSPACE/crypto/tests/fixtures" \
             -DCRYPTO_SDK_ENABLE_PYTHON_MTLS=ON \
+            -DCRYPTO_SDK_ENABLE_CONCURRENT_LIFECYCLE=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO=ON \
+            -DCRYPTO_SDK_ENABLE_CIPHER_BIO_RACE=ON \
             "-DPython3_EXECUTABLE=$(command -v python3)"
           cmake --build build-sdk --parallel 3
           ctest --test-dir build-sdk --output-on-failure --no-tests=error \
