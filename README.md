@@ -1,5 +1,22 @@
-# qigao/crypto — two C11 modules, one source of truth each
+# qigao/crypto — retiring; source moves to qigao/salts-core
 
+> **DEPRECATED / RETIREMENT IN PROGRESS.** New ASN1, Crypto and TLS
+> development belongs in [qigao/salts-core](https://github.com/qigao/salts-core)
+> under its module-local `asn1/` and `crypto/` directories.
+> This repository remains read/write only until all original code, tests,
+> downstream consumers and CI are validated, then it should be archived
+> read-only. Do not delete historical source or publish new packages here.
+
+Tracking: [retirement #45](https://github.com/qigao/crypto/issues/45),
+[SaltsCore migration PR #75](https://github.com/qigao/salts-core/pull/75),
+[native TLS gate PR #74](https://github.com/qigao/salts-core/pull/74).
+Original [mTLS PR #43](https://github.com/qigao/crypto/pull/43)
+has been copied, including its tests, but still requires exact-head
+acceptance before it can be superseded.
+
+---
+
+## Historical standalone-repository documentation
 This **single repository** contains two independently buildable native modules:
 
 | Module | Target | Owns | Depends on |
